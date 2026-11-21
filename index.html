@@ -281,7 +281,7 @@ input,textarea,select{font-family:inherit;}
 .sheet-backdrop{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.38);display:none;align-items:flex-end;}
 .sheet-backdrop.open{display:flex;animation:fadeIn .2s;}
 .sheet{
-  background:var(--bg);width:100%;max-height:92dvh;max-height:92vh;
+  background:var(--bg);width:100%;max-height:92vh;max-height:92dvh;
   border-radius:16px 16px 0 0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
   padding-bottom:calc(28px + var(--safe-bottom));
   animation:slideUp .32s cubic-bezier(.32,.72,0,1);
@@ -3060,17 +3060,21 @@ body.wk-resting #page-workout{padding-bottom:90px;}
 <style id="iphone-fit">
 /* ===== iPhone 14 Pro fit (393 x 852, Dynamic Island, home indicator) ===== */
 @media (max-width:500px){
+  :root{--tb-off:max(8px,calc(var(--safe-bottom) - 16px));}
   /* Solid strip behind the clock / Dynamic Island so scrolled content never shows through it */
   body::before{content:"";position:fixed;left:0;right:0;top:0;height:var(--safe-top);background:var(--bg);z-index:45;pointer-events:none;}
   /* Dashboard Next/Workout bar sticks flush under that strip instead of leaving a see-through gap */
   .topbar{top:-6px;}
+  .wk-live{top:-4px;}
+  /* Pop-up sheets always stop below the Dynamic Island, however tall their content */
+  html[data-design] .sheet{max-height:calc(100% - var(--safe-top) - 10px) !important;}
   /* Fade behind the floating tab bar so cards don't show underneath or below it */
-  html[data-design] .tabbar::before{content:"";position:absolute;left:-20px;right:-20px;top:-26px;bottom:calc(-1 * max(10px,calc(var(--safe-bottom) - 8px)) - 2px);
+  html[data-design] .tabbar::before{content:"";position:absolute;left:-20px;right:-20px;top:-26px;bottom:calc(-1 * var(--tb-off) - 2px);
     background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--bg) 90%,transparent) 40%,var(--bg));z-index:-1;pointer-events:none;border-radius:0;}
   /* Tab bar sits just above the home indicator rather than floating 44px up */
-  html[data-design] .tabbar{bottom:max(10px,calc(var(--safe-bottom) - 8px));}
-  html[data-design] .fab{bottom:calc(var(--tabbar-h) + max(10px,calc(var(--safe-bottom) - 8px)) + 16px);right:16px;width:52px;height:52px;}
-  html[data-design] .page-wrap{padding-bottom:calc(var(--tabbar-h) + var(--safe-bottom) + 40px);}
+  html[data-design] .tabbar{bottom:var(--tb-off);}
+  html[data-design] .fab{bottom:calc(var(--tabbar-h) + var(--tb-off) + 16px);right:16px;width:52px;height:52px;}
+  html[data-design] .page-wrap{padding-bottom:calc(var(--tabbar-h) + var(--tb-off) + 44px);}
   /* Today / Tomorrow / Choose Date chips line up with the cards instead of touching the screen edge */
   .page > div:not([class]) > .field > .chip-row{padding:0 var(--gap,16px);}
   /* Focus countdown cards: name gets two lines, date line never wraps */
