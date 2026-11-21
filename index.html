@@ -3064,30 +3064,31 @@ body.wk-resting #page-workout{padding-bottom:90px;}
 #diHalo{position:fixed;top:var(--di-top,11px);z-index:2147483000;display:none;}
 html.di-on #diHalo{display:block;}
 .di .di-core{position:absolute;inset:0;border-radius:inherit;background:#000;transition:box-shadow .5s ease;}
-.di-glow .di-core{box-shadow:0 0 0 1.5px var(--di-c),0 0 16px 2px color-mix(in srgb,var(--di-c) 55%,transparent);}
-.di-ring .di-core{box-shadow:0 0 0 2px var(--di-c);}
+.di-glow .di-core{box-shadow:0 0 0 3px var(--di-c),0 0 10px 4px var(--di-c),0 0 26px 8px color-mix(in srgb,var(--di-c) 80%,transparent),0 0 48px 14px color-mix(in srgb,var(--di-c) 45%,transparent);}
+.di-ring .di-core{box-shadow:0 0 0 3.5px var(--di-c),0 0 8px 3px color-mix(in srgb,var(--di-c) 60%,transparent);}
 .di-pulse .di-core{animation:diPulse 2.6s ease-in-out infinite;}
-@keyframes diPulse{0%,100%{box-shadow:0 0 0 1px var(--di-c),0 0 5px 0 color-mix(in srgb,var(--di-c) 35%,transparent);}50%{box-shadow:0 0 0 2px var(--di-c),0 0 24px 6px color-mix(in srgb,var(--di-c) 65%,transparent);}}
+@keyframes diPulse{0%,100%{box-shadow:0 0 0 2.5px var(--di-c),0 0 8px 2px color-mix(in srgb,var(--di-c) 60%,transparent);}50%{box-shadow:0 0 0 3.5px var(--di-c),0 0 14px 6px var(--di-c),0 0 40px 14px color-mix(in srgb,var(--di-c) 70%,transparent);}}
 @property --di-a{syntax:'<angle>';inherits:false;initial-value:0deg;}
-.di-rainbow .di-core::before{content:"";position:absolute;inset:-3px;border-radius:inherit;padding:2.5px;background:conic-gradient(from var(--di-a),#ff375f,#ff9f0a,#ffd60a,#30d158,#64d2ff,#5e5ce6,#bf5af2,#ff375f);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:diSpin 3s linear infinite;}
-.di-rainbow .di-core{box-shadow:0 0 14px 1px rgba(191,90,242,.45);}
+.di-rainbow .di-core::before{content:"";position:absolute;inset:-4.5px;border-radius:inherit;padding:4px;background:conic-gradient(from var(--di-a),#ff375f,#ff9f0a,#ffd60a,#30d158,#64d2ff,#5e5ce6,#bf5af2,#ff375f);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:diSpin 3s linear infinite;}
+.di-rainbow .di-core{box-shadow:0 0 18px 6px rgba(191,90,242,.6),0 0 40px 12px rgba(100,210,255,.35);}
 @keyframes diSpin{to{--di-a:360deg;}}
 .di svg{position:absolute;left:-4px;top:-4px;width:calc(100% + 8px);height:calc(100% + 8px);overflow:visible;}
-.di-live .di-core{left:-40px;right:-40px;}
-.di-live .di-l,.di-live .di-r{position:absolute;top:50%;transform:translateY(-50%);font:700 12px/1 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;white-space:nowrap;letter-spacing:-.2px;}
+.di-live .di-core{left:-44px;right:-44px;box-shadow:0 0 0 2px var(--di-c),0 0 16px 4px color-mix(in srgb,var(--di-c) 60%,transparent);}
+.di-live .di-l,.di-live .di-r{position:absolute;top:50%;transform:translateY(-50%);font:800 13.5px/1 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;white-space:nowrap;letter-spacing:-.2px;}
 .di-live .di-l{right:calc(100% + 6px);color:var(--di-c);}
 .di-live .di-r{left:calc(100% + 8px);color:#fff;}
-.di.di-bump .di-core{box-shadow:0 0 0 2.5px var(--di-c),0 0 30px 9px color-mix(in srgb,var(--di-c) 75%,transparent)!important;}
+.di.di-bump .di-core{box-shadow:0 0 0 4px var(--di-c),0 0 18px 8px var(--di-c),0 0 60px 20px color-mix(in srgb,var(--di-c) 80%,transparent)!important;}
 .di-prev{position:relative;width:100%;height:64px;border-radius:22px 22px 8px 8px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--sep);overflow:hidden;}
 .di-prev .di{top:13px;}
 .di-prev-hw{position:absolute;left:50%;top:13px;width:126px;height:37px;margin-left:-63px;border-radius:999px;background:#000;}
 .di-sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px;box-shadow:inset 0 0 0 1px rgba(128,128,128,.4);}
 /* ===== Workout: swipe a set to delete ===== */
-.wk-swipe{grid-column:1/-1;display:grid;grid-template-columns:subgrid;position:relative;border-radius:10px;overflow:hidden;transition:height .2s ease,opacity .2s ease,margin .2s ease;}
+.wk-swipe{grid-column:1/-1;display:grid;grid-template-columns:subgrid;position:relative;border-radius:10px;overflow:hidden;-webkit-user-select:none;user-select:none;transition:height .2s ease,opacity .2s ease,margin .2s ease;}
 .wk-swipe.gone{height:0!important;opacity:0;margin-top:-6px;}
-.wk-row{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;position:relative;z-index:1;background:var(--card);touch-action:pan-y;transition:transform .22s cubic-bezier(.3,.7,.2,1);}
+.wk-row{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;position:relative;z-index:1;background:var(--card);transition:transform .22s cubic-bezier(.3,.7,.2,1);}
 .wk-row.swiping{transition:none;}
-.wk-del-bg{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:16px;background:#FF453A;color:#fff;font-weight:700;font-size:14px;opacity:.75;transition:opacity .15s;}
+.wk-del-bg{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:16px;background:#FF453A;color:#fff;font-weight:700;font-size:14px;opacity:0;visibility:hidden;}
+.wk-swipe.open .wk-del-bg{visibility:visible;opacity:.7;}
 .wk-swipe.arm .wk-del-bg{opacity:1;}
 /* ===== Workout progress: exercise picker (no side-swiping) ===== */
 .wk-pick{display:flex;align-items:stretch;gap:8px;margin:6px var(--gap) 0;}
@@ -4199,7 +4200,7 @@ const SUBPAGES = {focus:'Focus', goals:'Goals', awards:'Awards', timeline:'Timel
 (function(){
   const order = ['dashboard','activities','workout','settings'];
   let sx=0, sy=0, st=0, ok=false;
-  const blocked = el => !!(el && el.closest && el.closest('[data-swipe],input,textarea,select,.scroll-chips,.hm,#hmScroll,.sheet,.sheet-backdrop,.tabbar,[contenteditable],.chip-row,table'));
+  const blocked = el => !!(el && el.closest && el.closest('[data-swipe],.wk-swipe,input,textarea,select,.scroll-chips,.hm,#hmScroll,.sheet,.sheet-backdrop,.tabbar,[contenteditable],.chip-row,table'));
   document.addEventListener('touchstart', e=>{
     ok = e.touches.length===1 && order.includes(currentPage) && !blocked(e.target);
     if(ok){ sx=e.touches[0].clientX; sy=e.touches[0].clientY; st=Date.now(); }
@@ -14667,8 +14668,8 @@ function diInfo(){
 function diPillPath(w, h, sw){ const r = (h-sw)/2, a = sw/2; return `M ${w/2} ${a} H ${w-a-r} A ${r} ${r} 0 0 1 ${w-a-r} ${h-a} H ${a+r} A ${r} ${r} 0 0 1 ${a+r} ${a} Z`; }
 function diInnerHtml(style){
   const I = diInfo();
-  if(style==='progress'){ const W = 134, H = 45, d = diPillPath(W, H, 3.2);
-    return `<div class="di-core"></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}" pathLength="100" fill="none" stroke="currentColor" stroke-opacity=".22" stroke-width="3.2"/><path d="${d}" pathLength="100" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="${I.pct} 100"/></svg>`; }
+  if(style==='progress'){ const W = 134, H = 45, d = diPillPath(W, H, 4.5);
+    return `<div class="di-core"></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}" pathLength="100" fill="none" stroke="currentColor" stroke-opacity=".3" stroke-width="4.5"/><path d="${d}" pathLength="100" fill="none" stroke="currentColor" stroke-width="4.5" style="filter:drop-shadow(0 0 4px currentColor) drop-shadow(0 0 10px currentColor)" stroke-linecap="round" stroke-dasharray="${I.pct} 100"/></svg>`; }
   if(style==='live'){ const done = I.pct>=100;
     return `<div class="di-core"></div><span class="di-l">${I.pct}%</span><span class="di-r">${done ? '✓' : I.next ? escapeHtml(fmtClockTime(I.next).replace(/\s?(AM|PM)$/i,'')) : '•'}</span>`; }
   return '<div class="di-core"></div>';
@@ -16818,42 +16819,57 @@ function wkSwipeDelete(ei, si){
   try{ if(navigator.vibrate) navigator.vibrate(12); }catch(err){}
   toast('Set '+(si+1)+' deleted', 'Undo', ()=>{ const B = wkActive(), f = B && B.id===aid && B.ex[ei]; if(!f) return; f.sets.splice(Math.min(si, f.sets.length), 0, removed); saveState(); renderWorkout(); });
 }
-/* Swipe a set row left to delete it (vertical scrolling still works normally). */
+/* Swipe a set row left to delete it (vertical scrolling still works normally).
+   Uses touch events (same as the rest of LifeOS's swipes) so it works on iPhone even when
+   the swipe starts on a number box; mouse drag works on the Mac. */
 (function(){
   let S = null, swipedAt = 0;
-  const reset = s=>{ s.row.style.transform=''; s.row.classList.remove('swiping'); s.wrap.classList.remove('arm'); };
-  document.addEventListener('pointerdown', e=>{
-    const row = e.target.closest && e.target.closest('.wk-row'); if(!row) return;
-    if(e.pointerType==='mouse' && e.button!==0) return;
-    S = {row, wrap:row.parentElement, x:e.clientX, y:e.clientY, id:e.pointerId, on:false, dx:0};
-  }, {passive:true});
-  document.addEventListener('pointermove', e=>{
-    if(!S || e.pointerId!==S.id) return;
-    const dx = e.clientX-S.x, dy = e.clientY-S.y;
+  const TH = row=>Math.min(110, row.offsetWidth*0.32);
+  const start = (target, x, y)=>{
+    const row = target.closest && target.closest('.wk-row'); if(!row) return;
+    S = {row, wrap:row.parentElement, x, y, on:false, dead:false, dx:0};
+  };
+  const move = (x, y, ev)=>{
+    if(!S || S.dead) return;
+    const dx = x-S.x, dy = y-S.y;
     if(!S.on){
-      if(Math.abs(dy)>10 && Math.abs(dy)>Math.abs(dx)){ S = null; return; }
-      if(dx < -12 && Math.abs(dx) > Math.abs(dy)*1.3){ S.on = true; S.row.classList.add('swiping'); try{ const a = document.activeElement; if(a && S.row.contains(a)) a.blur(); }catch(err){} }
-      else return;
+      if(Math.abs(dy) > 8 && Math.abs(dy) >= Math.abs(dx)){ S.dead = true; return; }
+      if(dx > -10 || Math.abs(dx) < Math.abs(dy)*1.2) return;
+      S.on = true; S.wrap.classList.add('open'); S.row.classList.add('swiping');
+      try{ const a = document.activeElement; if(a && S.row.contains(a)) a.blur(); }catch(err){}
     }
+    if(ev && ev.cancelable) ev.preventDefault();
     S.dx = Math.min(0, dx);
     S.row.style.transform = 'translateX('+S.dx+'px)';
-    S.wrap.classList.toggle('arm', -S.dx > Math.min(120, S.row.offsetWidth*0.35));
-  }, {passive:true});
-  const end = e=>{
-    if(!S || e.pointerId!==S.id) return; const s = S; S = null; if(!s.on) return;
+    const armed = -S.dx > TH(S.row);
+    if(armed && !S.wrap.classList.contains('arm')){ try{ if(navigator.vibrate) navigator.vibrate(8); }catch(err){} }
+    S.wrap.classList.toggle('arm', armed);
+  };
+  const end = ()=>{
+    if(!S) return; const s = S; S = null; if(!s.on) return;
     swipedAt = Date.now();
     s.row.classList.remove('swiping');
-    if(-s.dx > Math.min(120, s.row.offsetWidth*0.35)){
+    if(-s.dx > TH(s.row)){
       s.row.style.transform = 'translateX(-110%)';
       s.wrap.style.height = s.wrap.offsetHeight+'px';
       requestAnimationFrame(()=>s.wrap.classList.add('gone'));
       setTimeout(()=>wkSwipeDelete(+s.wrap.dataset.ei, +s.wrap.dataset.si), 220);
-    } else reset(s);
+    } else {
+      s.row.style.transform = ''; s.wrap.classList.remove('arm');
+      setTimeout(()=>s.wrap.classList.remove('open'), 230);
+    }
   };
-  document.addEventListener('pointerup', end);
-  document.addEventListener('pointercancel', e=>{ if(S && e.pointerId===S.id){ if(S.on) reset(S); S = null; } });
+  document.addEventListener('touchstart', e=>{ if(e.touches.length!==1){ S = null; return; } const t = e.touches[0]; start(e.target, t.clientX, t.clientY); }, {passive:true});
+  document.addEventListener('touchmove', e=>{ if(!S) return; const t = e.touches[0]; move(t.clientX, t.clientY, e); }, {passive:false});
+  document.addEventListener('touchend', end, {passive:true});
+  document.addEventListener('touchcancel', end, {passive:true});
+  /* mouse (Mac) */
+  let mouse = false;
+  document.addEventListener('mousedown', e=>{ if(e.button!==0 || (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents)) return; mouse = true; start(e.target, e.clientX, e.clientY); });
+  document.addEventListener('mousemove', e=>{ if(mouse) move(e.clientX, e.clientY, null); });
+  document.addEventListener('mouseup', ()=>{ if(mouse){ mouse = false; end(); } });
   /* a swipe that ends on the tick button must not also tick the set */
-  document.addEventListener('click', e=>{ if(Date.now()-swipedAt < 400 && e.target.closest && e.target.closest('.wk-swipe')){ e.stopPropagation(); e.preventDefault(); } }, true);
+  document.addEventListener('click', e=>{ if(Date.now()-swipedAt < 450 && e.target.closest && e.target.closest('.wk-swipe')){ e.stopPropagation(); e.preventDefault(); } }, true);
 })();
 function wkRemoveSet(ei){ const A = wkActive(), e = A && A.ex[ei]; if(!e || e.sets.length<2) return; const i = e.sets.map(x=>x.done).lastIndexOf(false); e.sets.splice(i>=0 ? i : e.sets.length-1, 1); saveState(); renderWorkout(); }
 function wkExMenu(ei){
