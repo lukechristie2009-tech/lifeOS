@@ -3057,6 +3057,31 @@ body.wk-resting #page-workout{padding-bottom:90px;}
 }
 @media (max-width:360px){ .wk-prev{display:none;} .wk-grid{grid-template-columns:22px 1fr 1fr 38px;} .wk-grid .wk-gh:nth-child(2){display:none;} }
 </style>
+<style id="iphone-fit">
+/* ===== iPhone 14 Pro fit (393 x 852, Dynamic Island, home indicator) ===== */
+@media (max-width:500px){
+  /* Solid strip behind the clock / Dynamic Island so scrolled content never shows through it */
+  body::before{content:"";position:fixed;left:0;right:0;top:0;height:var(--safe-top);background:var(--bg);z-index:45;pointer-events:none;}
+  /* Dashboard Next/Workout bar sticks flush under that strip instead of leaving a see-through gap */
+  .topbar{top:-6px;}
+  /* Fade behind the floating tab bar so cards don't show underneath or below it */
+  html[data-design] .tabbar::before{content:"";position:absolute;left:-20px;right:-20px;top:-26px;bottom:calc(-1 * max(10px,calc(var(--safe-bottom) - 8px)) - 2px);
+    background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--bg) 90%,transparent) 40%,var(--bg));z-index:-1;pointer-events:none;border-radius:0;}
+  /* Tab bar sits just above the home indicator rather than floating 44px up */
+  html[data-design] .tabbar{bottom:max(10px,calc(var(--safe-bottom) - 8px));}
+  html[data-design] .fab{bottom:calc(var(--tabbar-h) + max(10px,calc(var(--safe-bottom) - 8px)) + 16px);right:16px;width:52px;height:52px;}
+  html[data-design] .page-wrap{padding-bottom:calc(var(--tabbar-h) + var(--safe-bottom) + 40px);}
+  /* Today / Tomorrow / Choose Date chips line up with the cards instead of touching the screen edge */
+  .page > div:not([class]) > .field > .chip-row{padding:0 var(--gap,16px);}
+  /* Focus countdown cards: name gets two lines, date line never wraps */
+  .fcd-c > b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:clip;line-height:1.2;}
+  .fcd-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px;}
+  /* Workout week strip labels */
+  .wk-week{gap:4px;}
+  .wk-wd small{font-size:10px;}
+}
+</style>
+
 </head>
 <body>
 <div id="app">
@@ -4982,6 +5007,8 @@ function reqStatus(it, date){
   const frac = need.length ? need.reduce((a,r)=>a+r.frac,0)/need.length : 1;
   return {rows, met: need.every(r=>r.ok), done: need.filter(r=>r.ok).length, total: need.length, frac};
 }
+/* Short split-day label for the 7-day strip (fits a 393px iPhone): "Legs and cardio" -> "Legs", "Upper A" stays. */
+function wkShortName(n){ n = String(n||'').trim(); if(n.length <= 7) return n; const w = n.split(/\s+/); if(w.length > 1 && w[w.length-1].length === 1) return w[0] + ' ' + w[w.length-1]; return w[0]; }
 function isSimpleDesign(id){ id = id || (state && state.design); return !!id && (id==='simple' || String(id).indexOf('simple-')===0); }
 function isStrictTask(refId){ return !!(state && state.taskReqStrict && refId && state.taskReqStrict[refId]); }
 function reqBlocked(it, date){
@@ -12406,7 +12433,7 @@ function countdownCell(tab, label, f){
   if(left > 0){ big = left; unit = left === 1 ? 'day left' : 'days left'; }
   else if(left === 0){ big = 'Last day'; }
   else { big = 'Ended'; }
-  const meta = notStarted ? 'Starts ' + fmtDM(f.startDate) : (left < 0 ? 'Ended ' + fmtDM(f.endDate) : 'Day ' + elapsed + ' of ' + total + ' · ends ' + fmtDM(f.endDate));
+  const meta = notStarted ? 'Starts ' + fmtDM(f.startDate) : (left < 0 ? 'Ended ' + fmtDM(f.endDate) : 'Day ' + elapsed + '/' + total + ' · ends ' + fmtDM(f.endDate));
   const urgent = left >= 0 && left <= 2;
   return `<button type="button" class="fcd-c ${urgent ? 'urgent' : ''}" onclick="gotoFocusTab('${tab}')">
     <small>${label}</small>
@@ -16510,7 +16537,7 @@ function renderWorkout(){
   const doneToday = wkSessionsOn(today);
   const wd = wkWeekDays().map(ds=>{
     const p = wkPlanFor(ds), t = wkTrained(ds);
-    return `<div class="wk-wd ${t?'on':''} ${ds===today?'td':''} ${p?'':'rest'}"><i>${t ? '✓' : WK_SHORT[wkDow(ds)][0]}</i><small>${escapeHtml(p ? p.name : 'Rest')}</small></div>`;
+    return `<div class="wk-wd ${t?'on':''} ${ds===today?'td':''} ${p?'':'rest'}"><i>${t ? '✓' : WK_SHORT[wkDow(ds)][0]}</i><small title="${escapeHtml(p ? p.name : 'Rest')}">${escapeHtml(p ? wkShortName(p.name) : 'Rest')}</small></div>`;
   }).join('');
   let go;
   if(A && wkTab==='train') go = '';
