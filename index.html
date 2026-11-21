@@ -65,6 +65,28 @@
   --accent:#0A84FF; --accent-soft:rgba(10,132,255,.18);
 }
 
+
+/* ---- Hold to peek: a task's contents in a floating card ---- */
+.pk-bd{position:fixed;inset:0;z-index:350;background:rgba(0,0,0,.42);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:calc(var(--safe-top) + 24px) 18px calc(var(--safe-bottom) + 24px);animation:fadeIn .18s;}
+.pk{width:100%;max-width:420px;max-height:100%;overflow:auto;background:var(--card);color:var(--text);border-radius:22px;padding:18px 18px 14px;box-shadow:0 20px 60px rgba(0,0,0,.35);animation:pkIn .22s cubic-bezier(.32,.72,0,1);}
+@keyframes pkIn{from{transform:scale(.92);opacity:0}to{transform:none;opacity:1}}
+.pk-k{font-size:var(--fs-xs);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);}
+.pk-t{font-size:var(--fs-l);font-weight:700;margin:4px 0 2px;line-height:1.2;}
+.pk-m{font-size:var(--fs-s);color:var(--text-3);margin-bottom:10px;}
+.pk-n{white-space:pre-wrap;font-size:15px;color:var(--text-2);background:var(--fill);border-radius:12px;padding:10px 12px;margin:8px 0;}
+.pk-h{font-size:var(--fs-xs);font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);margin:12px 0 4px;}
+.pk-l{list-style:none;margin:0;padding:0;}
+.pk-l li{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--sep);font-size:15px;}
+.pk-l li:last-child{border-bottom:0;}
+.pk-l .pk-g{display:block;font-size:var(--fs-xs);color:var(--text-3);font-weight:600;padding:8px 0 2px;border:0;}
+.pk-c{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--text-3);margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:11px;}
+.pk-c.on{background:var(--green);border-color:var(--green);color:#fff;}
+.pk-l li.on span:last-child{color:var(--text-3);text-decoration:line-through;}
+.pk-e{font-size:15px;color:var(--text-3);margin:8px 0;}
+.pk-a{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.pk-a button{flex:1;min-width:0;border:0;border-radius:12px;padding:11px 10px;background:var(--fill);color:var(--text);font-size:15px;font-weight:600;}
+.pk-a button.pri{background:var(--accent);color:var(--accent-ink);}
+
 /* =================== Base =================== */
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;background:var(--bg);overscroll-behavior:none;}
@@ -5448,7 +5470,7 @@ function routineTile(it, lifeFocusId, ecomFocusId, date, isNext){
   const showRing = !it.done && (st || isChecklist);
   const cls = ['rt', bundleable?'selectable':'', bSel?'selected':'', it.done?'done':'', blocked?'pending':'', (isNext&&!it.done)?'next':'', open?'open':''].filter(Boolean).join(' ');
   const checkLabel = it.done ? 'Completed. Tap to undo' : isChecklist ? 'Open checklist' : blocked ? 'Requirements not met yet' : 'Mark complete';
-  return `<div class="${cls}" data-key="${escapeHtml(key)}" ${swipe} ${editable&&!bundleMode?`data-hold="cpMenu('rt',${c.a})"`:''}>
+  return `<div class="${cls}" data-key="${escapeHtml(key)}" ${swipe} ${editable&&!bundleMode?`data-hold="peekTask(${c.a})"`:''}>
     <div class="rt-face" ${bundleMode ? (bundleable?`onclick="toggleBundleSel('${bKey}')"`:'') : (editable?`onclick="${c.drop}"`:'')}>
       <div class="rt-l1">
         <span class="rt-title">${escapeHtml(plainTitle(it.title))}</span>
@@ -5486,7 +5508,7 @@ function upNextCard(it, lifeFocusId, ecomFocusId, date, opts){
     }
     if(!isChecklist) action = `<button class="un-btn ${blocked?'is-blocked':''}" ${blocked?'aria-disabled="true"':''} onclick="${blocked?`toast('Finish the requirements first')`:`toggleRoutineItem(${c.a})`}">${it.refId==='skilllearning'&&!it.skillId?'Choose skill and complete':'Complete'}</button>`;
   }
-  return `<section class="un ${opts.cls||''}" aria-label="Up next" ${editable?`data-hold="openTaskEdit(${c.a})"`:''}>
+  return `<section class="un ${opts.cls||''}" aria-label="Up next" ${editable?`data-hold="peekTask(${c.a})"`:''}>
     <div class="un-top"><span class="un-k">${escapeHtml(opts.k||'Up next')}</span>${time?`<span class="un-time">${escapeHtml(time)}</span>`:''}</div>
     <div class="un-main">
       <span class="un-ico">${taskIcon(it)}</span>
@@ -13991,9 +14013,9 @@ function ciRenderSheet(){
   const keepScroll = wasOpen ? sheetEl.scrollTop : 0;
   const T = ciTimes();
   let left = 0;
-  const row = (done, title, sub, tap, extra)=>{
+  const row = (done, title, sub, tap, extra, hold)=>{
     if(!done) left++;
-    return `<div class="row ci-row" onclick="${tap}">
+    return `<div class="row ci-row" onclick="${tap}"${hold?` data-hold="${hold}"`:''}>
       <div class="checkbox ${done?'checked':''}">${done?'✓':''}</div>
       <div class="row-text"><div class="row-title ${done?'done':''}">${escapeHtml(title)}</div>${sub?`<div class="row-sub">${escapeHtml(sub)}</div>`:''}</div>${extra||''}
     </div>`;
@@ -14004,10 +14026,10 @@ function ciRenderSheet(){
     const when = it.time ? fmtClockTime(it.time) : '';
     if(it.type==='checklist' && Array.isArray(it.checklist) && it.checklist.length){
       if(!it.done) left++;
-      return `<div class="row ci-row ci-head"><div class="row-text"><div class="row-title ${it.done?'done':''}">${escapeHtml(plainTitle(it.title||''))}</div><div class="row-sub">${escapeHtml([when, it.checklist.filter(c=>c.done).length+' of '+it.checklist.length].filter(Boolean).join(' · '))}</div></div></div>`
+      return `<div class="row ci-row ci-head" data-hold="peekCi(${i})"><div class="row-text"><div class="row-title ${it.done?'done':''}">${escapeHtml(plainTitle(it.title||''))}</div><div class="row-sub">${escapeHtml([when, it.checklist.filter(c=>c.done).length+' of '+it.checklist.length].filter(Boolean).join(' · '))}</div></div></div>`
         + it.checklist.map(c=>`<div class="row ci-row ci-sub" onclick="toggleChecklistChild('${e.focusId}','${s.date}','${it.id}','${c.id}')"><div class="checkbox ${c.done?'checked':''}">${c.done?'✓':''}</div><div class="row-text"><div class="row-title ${c.done?'done':''}">${escapeHtml(plainTitle(c.title||c.text||''))}</div></div></div>`).join('');
     }
-    return row(!!it.done, plainTitle(it.title||''), ciLogSub(it, s.date, when), `ciTickRoutine(${i})`, photoBtnHtml(s.date, it.refId, it.title)) + ciLogHtml(i, it, s.date);
+    return row(!!it.done, plainTitle(it.title||''), ciLogSub(it, s.date, when), `ciTickRoutine(${i})`, photoBtnHtml(s.date, it.refId, it.title), `peekCi(${i})`) + ciLogHtml(i, it, s.date);
   };
   const sections = [
     ['routine', s.win==='a' ? 'Routine · up to '+fmtClockTime(T.a) : s.win==='b' ? 'Routine · from '+fmtClockTime(T.a) : 'Routine'],
@@ -14028,15 +14050,15 @@ function ciRenderSheet(){
         const moved = r && !done && r.date > s.date;
         const sub = moved ? 'Moved to tomorrow' : late ? 'Overdue · '+fmtDM(r.date) : (r && r.time ? fmtClockTime(r.time) : '');
         if(moved){ return `<div class="row ci-row" style="opacity:.55"><div class="checkbox"></div><div class="row-text"><div class="row-title">${escapeHtml(e.title||'')}</div><div class="row-sub">${escapeHtml(sub)}</div></div></div>`; }
-        return row(done, (r && r.title) || e.title || '', sub, `ciTickReminder(${i})`, done ? '' : `<button type="button" class="ci-later" onclick="event.stopPropagation();snoozeReminder('${e.id}')">Tomorrow</button>`);
+        return row(done, (r && r.title) || e.title || '', sub, `ciTickReminder(${i})`, done ? '' : `<button type="button" class="ci-later" onclick="event.stopPropagation();snoozeReminder('${e.id}')">Tomorrow</button>`, `peekCi(${i})`);
       }
       const l = (state.todaysLists||{})[e.date], x = l && l.items.find(y=>y.id===e.id);
-      return row(!x || !!x.done, (x && x.title) || e.title || '', '', `toggleTlItemDone('${e.date}','${e.id}')`);
+      return row(!x || !!x.done, (x && x.title) || e.title || '', '', `toggleTlItemDone('${e.date}','${e.id}')`, '', `peekCi(${i})`);
     }).join('') + `</div>`;
   });
   if(!s.entries.length) body = `<div class="ci-empty"><b>Nothing to tick off.</b><span>Everything for this part of the day is already done.</span></div>`;
   const head = s.win==='b' ? 'Evening tick-off' : 'Tick off';
-  const intro = !s.entries.length ? '' : `<p class="ci-intro">Tap what you've done. Leave what you haven't.</p>`;
+  const intro = !s.entries.length ? '' : `<p class="ci-intro">Tap what you've done. Leave what you haven't. Hold a task to see what's in it.</p>`;
   openSheet(`<div class="ci-sheet">
     <div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>${head}</h2><button class="sheet-btn bold" onclick="ciFinish()">Finish</button></div>
     <div class="sheet-body">${intro}${body}
@@ -14199,6 +14221,79 @@ function cpMenu(type, a, b, c){
   } else return;
   openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>${escapeHtml(title)}</h2><span></span></div>
     <div class="sheet-body"><div class="card">${rows}</div></div>`);
+}
+
+/* ---------- Hold to peek ----------
+   Holding a task in the tick-off, on a dashboard tile or on the Up next /
+   one-at-a-time card shows everything inside it (note, steps, requirements,
+   merged tasks) in a floating card. Tap anywhere outside to close; whatever
+   was open underneath (like the tick-off) stays exactly where it was. */
+function pkClose(){ const b = document.getElementById('pkBd'); if(b) b.remove(); }
+function pkOpen(inner){
+  pkClose();
+  const b = document.createElement('div');
+  b.className = 'pk-bd'; b.id = 'pkBd';
+  b.innerHTML = `<div class="pk" role="dialog" aria-modal="true" onclick="event.stopPropagation()">${inner}</div>`;
+  b.addEventListener('click', e=>{ if(e.target===b) pkClose(); });
+  document.body.appendChild(b);
+}
+function pkStepsHtml(list){
+  if(!list.length) return '';
+  return `<ul class="pk-l">${list.map(x=>(x.group?`<li class="pk-g">${escapeHtml(x.group)}</li>`:'')+`<li class="${x.done?'on':''}"><span class="pk-c ${x.done?'on':''}">${x.done?'✓':''}</span><span>${escapeHtml(plainTitle(x.title||x.text||''))}</span></li>`).join('')}</ul>`;
+}
+function pkTaskBody(it, date){
+  let h = '';
+  if(it.note && String(it.note).trim()) h += `<div class="pk-n">${escapeHtml(String(it.note).trim())}</div>`;
+  if(it.type==='checklist' && Array.isArray(it.checklist) && it.checklist.length){
+    h += `<div class="pk-h">Checklist · ${it.checklist.filter(c=>c.done).length} of ${it.checklist.length}</div>` + pkStepsHtml(it.checklist);
+  } else {
+    const steps = taskSteps(it);
+    if(steps.length) h += `<div class="pk-h">Steps · ${steps.filter(x=>x.done).length} of ${steps.length}</div>` + pkStepsHtml(steps);
+    const st = reqStatus(it, date);
+    const reqs = st ? st.rows.filter(r=>r.type!=='steps' || !r.hasSteps) : [];
+    if(reqs.length) h += `<div class="pk-h">To log</div>` + pkStepsHtml(reqs.map(r=>({done:r.ok, title:(r.label||r.short||'')+(r.detail && r.detail!=='Done' && r.type!=='check' ? ' · '+r.detail : '')+(r.optional?' (optional)':'')})));
+  }
+  if(it.refId==='skilllearning' && it.skillId){ const sk = (state.skills||[]).find(x=>x.id===it.skillId); if(sk) h += `<div class="pk-h">Skill</div><div class="pk-e" style="color:var(--text)">${escapeHtml(sk.name)}</div>`; }
+  if(!h) h = `<div class="pk-e">Nothing else in this task. No note, steps or requirements.</div>`;
+  return h;
+}
+function pkHead(kind, title, meta){
+  return `<div class="pk-k">${escapeHtml(kind)}</div><div class="pk-t">${escapeHtml(title)}</div>${meta?`<div class="pk-m">${escapeHtml(meta)}</div>`:''}`;
+}
+function pkRoutineMeta(it){
+  return [it.time && /^\d/.test(it.time) ? fmtClockTime(it.time) : (it.displayText||''), it.duration ? it.duration+' min' : '', it.done ? (it.forcedDone ? 'Ticked anyway' : 'Done') : 'Not done yet'].filter(Boolean).join(' · ');
+}
+/* dashboard tiles and the Up next card: contents, then the old hold options */
+function peekTask(focusId, date, itemId){
+  const it = findFocusItem(focusId, date, itemId); if(!it) return;
+  const a = `'${focusId}','${date}','${itemId}'`;
+  const pk = photoKey(date, it.refId);
+  const safeT = String(plainTitle(it.title||'')).replace(/['"\\]/g,'');
+  pkOpen(pkHead(it.category==='ecommerce' ? 'Ecommerce task' : 'Routine task', plainTitle(it.title||''), pkRoutineMeta(it)) + pkTaskBody(it, date)
+    + `<div class="pk-a">
+        <button type="button" onclick="pkClose();cpCopy('rt',${a})">Copy</button>
+        <button type="button" onclick="pkClose();photoTap('${pk}','${safeT}')">${photoHas(pk) ? 'Photo' : 'Add photo'}</button>
+        <button type="button" class="pri" onclick="pkClose();openTaskEdit(${a})">Edit</button>
+      </div>`);
+}
+/* tick-off rows: read-only look, the tick-off stays open underneath */
+function peekCi(i){
+  const s = ciSession, e = s && s.entries[i]; if(!e) return;
+  if(e.k==='r'){
+    const it = ciRoutineItem(e); if(!it) return;
+    pkOpen(pkHead(it.category==='ecommerce' ? 'Ecommerce task' : 'Routine task', plainTitle(it.title||''), pkRoutineMeta(it)) + pkTaskBody(it, s.date) + `<div class="pk-a"><button type="button" class="pri" onclick="pkClose()">Close</button></div>`);
+    return;
+  }
+  if(e.k==='m'){
+    const r = (state.reminders||[]).find(x=>String(x.id)===String(e.id)); if(!r) return;
+    const meta = [r.date ? fmtDM(r.date) : '', r.time ? fmtClockTime(r.time) : '', r.priority ? r.priority+' priority' : '', r.category||'', r.repeat ? 'Repeats' : ''].filter(Boolean).join(' · ');
+    const body = (r.notes && String(r.notes).trim()) ? `<div class="pk-n">${escapeHtml(String(r.notes).trim())}</div>` : `<div class="pk-e">No notes on this reminder.</div>`;
+    pkOpen(pkHead('Reminder', r.title||'', meta) + body + `<div class="pk-a"><button type="button" class="pri" onclick="pkClose()">Close</button></div>`);
+    return;
+  }
+  const l = (state.todaysLists||{})[e.date], x = l && l.items.find(y=>y.id===e.id); if(!x) return;
+  const body = (x.note && String(x.note).trim()) ? `<div class="pk-n">${escapeHtml(String(x.note).trim())}</div>` : `<div class="pk-e">No note on this item.</div>`;
+  pkOpen(pkHead("Today's list", x.title||'', x.done ? 'Done' : 'Not done yet') + body + `<div class="pk-a"><button type="button" class="pri" onclick="pkClose()">Close</button></div>`);
 }
 /* Copies every Today's List item you haven't ticked yet: into LifeOS's own
    clipboard (hold + Add Item on any day to paste them) and, as a plain
