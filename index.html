@@ -3058,11 +3058,54 @@ body.wk-resting #page-workout{padding-bottom:90px;}
 @media (max-width:360px){ .wk-prev{display:none;} .wk-grid{grid-template-columns:22px 1fr 1fr 38px;} .wk-grid .wk-gh:nth-child(2){display:none;} }
 </style>
 <style id="iphone-fit">
+
+/* ===== Dynamic Island designs ===== */
+.di{position:absolute;left:50%;transform:translateX(-50%);width:126px;height:37px;border-radius:999px;pointer-events:none;color:var(--di-c,#fff);}
+#diHalo{position:fixed;top:var(--di-top,11px);z-index:2147483000;display:none;}
+html.di-on #diHalo{display:block;}
+.di .di-core{position:absolute;inset:0;border-radius:inherit;background:#000;transition:box-shadow .5s ease;}
+.di-glow .di-core{box-shadow:0 0 0 1.5px var(--di-c),0 0 16px 2px color-mix(in srgb,var(--di-c) 55%,transparent);}
+.di-ring .di-core{box-shadow:0 0 0 2px var(--di-c);}
+.di-pulse .di-core{animation:diPulse 2.6s ease-in-out infinite;}
+@keyframes diPulse{0%,100%{box-shadow:0 0 0 1px var(--di-c),0 0 5px 0 color-mix(in srgb,var(--di-c) 35%,transparent);}50%{box-shadow:0 0 0 2px var(--di-c),0 0 24px 6px color-mix(in srgb,var(--di-c) 65%,transparent);}}
+@property --di-a{syntax:'<angle>';inherits:false;initial-value:0deg;}
+.di-rainbow .di-core::before{content:"";position:absolute;inset:-3px;border-radius:inherit;padding:2.5px;background:conic-gradient(from var(--di-a),#ff375f,#ff9f0a,#ffd60a,#30d158,#64d2ff,#5e5ce6,#bf5af2,#ff375f);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:diSpin 3s linear infinite;}
+.di-rainbow .di-core{box-shadow:0 0 14px 1px rgba(191,90,242,.45);}
+@keyframes diSpin{to{--di-a:360deg;}}
+.di svg{position:absolute;left:-4px;top:-4px;width:calc(100% + 8px);height:calc(100% + 8px);overflow:visible;}
+.di-live .di-core{left:-40px;right:-40px;}
+.di-live .di-l,.di-live .di-r{position:absolute;top:50%;transform:translateY(-50%);font:700 12px/1 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;white-space:nowrap;letter-spacing:-.2px;}
+.di-live .di-l{right:calc(100% + 6px);color:var(--di-c);}
+.di-live .di-r{left:calc(100% + 8px);color:#fff;}
+.di.di-bump .di-core{box-shadow:0 0 0 2.5px var(--di-c),0 0 30px 9px color-mix(in srgb,var(--di-c) 75%,transparent)!important;}
+.di-prev{position:relative;width:100%;height:64px;border-radius:22px 22px 8px 8px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--sep);overflow:hidden;}
+.di-prev .di{top:13px;}
+.di-prev-hw{position:absolute;left:50%;top:13px;width:126px;height:37px;margin-left:-63px;border-radius:999px;background:#000;}
+.di-sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px;box-shadow:inset 0 0 0 1px rgba(128,128,128,.4);}
+/* ===== Workout: swipe a set to delete ===== */
+.wk-swipe{grid-column:1/-1;display:grid;grid-template-columns:subgrid;position:relative;border-radius:10px;overflow:hidden;transition:height .2s ease,opacity .2s ease,margin .2s ease;}
+.wk-swipe.gone{height:0!important;opacity:0;margin-top:-6px;}
+.wk-row{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;position:relative;z-index:1;background:var(--card);touch-action:pan-y;transition:transform .22s cubic-bezier(.3,.7,.2,1);}
+.wk-row.swiping{transition:none;}
+.wk-del-bg{position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;padding-right:16px;background:#FF453A;color:#fff;font-weight:700;font-size:14px;opacity:.75;transition:opacity .15s;}
+.wk-swipe.arm .wk-del-bg{opacity:1;}
+/* ===== Workout progress: exercise picker (no side-swiping) ===== */
+.wk-pick{display:flex;align-items:stretch;gap:8px;margin:6px var(--gap) 0;}
+.wk-pick-arr{flex:0 0 44px;border:0;border-radius:var(--radius);background:var(--card);color:var(--text);font-size:24px;box-shadow:var(--shadow);}
+.wk-pick-main{flex:1;min-width:0;border:0;border-radius:var(--radius);background:var(--card);color:var(--text);box-shadow:var(--shadow);padding:10px 12px;text-align:left;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:8px;}
+.wk-pick-main small{grid-column:1;font-size:11px;opacity:.6;}
+.wk-pick-main b{grid-column:1;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wk-pick-main span{grid-column:2;grid-row:1/3;align-self:center;font-size:13px;color:var(--accent);font-weight:600;}
+.wk-pick-q{width:100%;box-sizing:border-box;padding:11px 14px;border-radius:12px;border:0;background:var(--card);color:var(--text);font-size:16px;margin-bottom:4px;}
+.wk-pick-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.wk-pick-it{border:0;border-radius:14px;background:var(--card);color:var(--text);padding:11px 12px;text-align:left;display:flex;flex-direction:column;gap:3px;min-height:58px;}
+.wk-pick-it b{font-size:14px;line-height:1.2;}
+.wk-pick-it small{font-size:11px;opacity:.6;}
+.wk-pick-it.on{box-shadow:inset 0 0 0 2px var(--accent);}
+.section-label.wk-pg{padding:14px 4px 8px;}
 /* ===== iPhone 14 Pro fit (393 x 852, Dynamic Island, home indicator) ===== */
 @media (max-width:500px){
-  :root{--tb-off:max(8px,calc(var(--safe-bottom) - 16px));}
-  /* Solid strip behind the clock / Dynamic Island so scrolled content never shows through it */
-  body::before{content:"";position:fixed;left:0;right:0;top:0;height:var(--safe-top);background:var(--bg);z-index:45;pointer-events:none;}
+  :root{--tb-off:max(6px,calc(var(--safe-bottom) - 28px));}
   /* Dashboard Next/Workout bar sticks flush under that strip instead of leaving a see-through gap */
   .topbar{top:-6px;}
   .wk-live{top:-4px;}
@@ -5563,6 +5606,7 @@ function renderDashboard(){
   const prof = (typeof getActiveProfile==='function') ? getActiveProfile() : null;
   const todayPct = routineTotal ? Math.round(routineDone/routineTotal*100) : 0;
   const nextItem = mergedRoutine.find(it=>!it.__todaysList && !it.done);
+  window.__diInfo = {pct: todayPct, total: routineTotal, next: nextItem && /^\d{1,2}:\d{2}$/.test(nextItem.time||'') ? nextItem.time : ''};
   const nextTime = nextItem ? (nextItem.time && nextItem.time!=='AUTO' ? nextItem.time : (nextItem.displayText||'')) : '';
   const nextTitle = nextItem ? String(nextItem.title||'').replace(/^[\u{1F300}-\u{1FAFF}☀-➿️\s]+/u,'') || nextItem.title : '';
   const chip = (k,v,click)=>`<button class="dh-chip" type="button" ${click?`onclick="${click}"`:''}><small>${k}</small><span>${v}</span></button>`;
@@ -9642,6 +9686,7 @@ function renderSettingsPanel(){
     <div class="card" style="margin-top:8px"><div class="row" onclick="toggleSimpleDesign()"><div class="row-text"><div class="row-title">Super Simple mode</div><div class="row-sub">${isSimpleDesign() ? 'On. Tap to go back to your previous design' : 'Off. Tap for a clean, colourful, one-column look'}</div></div><div class="chevron">›</div></div></div>
     ${renderDesignPicker()}
     ${bgSettingsHtml()}
+    ${diSettingsHtml()}
     ${fxDisplayHtml()}
     ${actLayoutSettingHtml()}`;
   S.access = accessSettingsHtml();
@@ -14600,6 +14645,75 @@ function fxEnter(){
     tabs.forEach((t,k)=>t.animate([{transform:'translateY(60px)', opacity:0},{transform:'none', opacity:1}], {duration:520, delay:300+k*80, easing:'cubic-bezier(.3,1.4,.5,1)', fill:'backwards'}));
   }catch(e){ console.error(e); }
 }
+/* ============ DYNAMIC ISLAND ============
+   Draws a design around the iPhone's Dynamic Island (14 Pro and newer) when LifeOS
+   is opened from the Home Screen. Chosen in Settings › Display. Never takes taps. */
+const DI_STYLES = [['off','Off'],['glow','Glow'],['pulse','Pulse'],['ring','Ring'],['rainbow','Rainbow'],['progress','Progress ring'],['live','Live']];
+const DI_COLORS = [['accent','Theme'],['white','White'],['#0A84FF','Blue'],['#BF5AF2','Purple'],['#30D158','Green'],['#FF9F0A','Orange'],['#FF375F','Pink']];
+function diStyle(){ const s = state && state.islandStyle; return DI_STYLES.some(x=>x[0]===s) ? s : 'off'; }
+function diColor(){ const c = (state && state.islandColor) || 'accent'; return c==='accent' ? 'var(--accent)' : c==='white' ? '#fff' : c; }
+function diSafeTop(){
+  let p = document.getElementById('diProbe');
+  if(!p){ p = document.createElement('div'); p.id = 'diProbe'; p.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)'; document.body.appendChild(p); }
+  return parseFloat(getComputedStyle(p).paddingTop) || 0;
+}
+/* Dynamic Island phones have a 59-62px top inset; notch phones are 44-50px */
+function diHasIsland(){ return /iPhone/.test(navigator.userAgent) && diSafeTop() >= 54 && innerHeight > innerWidth; }
+function diInfo(){
+  const i = window.__diInfo || {}; let pct = i.pct;
+  if(pct==null){ try{ const d = dayPct(todayISO()); pct = d==null ? 0 : Math.round(d*100); }catch(e){ pct = 0; } }
+  return {pct: Math.max(0, Math.min(100, pct||0)), next: i.next || ''};
+}
+function diPillPath(w, h, sw){ const r = (h-sw)/2, a = sw/2; return `M ${w/2} ${a} H ${w-a-r} A ${r} ${r} 0 0 1 ${w-a-r} ${h-a} H ${a+r} A ${r} ${r} 0 0 1 ${a+r} ${a} Z`; }
+function diInnerHtml(style){
+  const I = diInfo();
+  if(style==='progress'){ const W = 134, H = 45, d = diPillPath(W, H, 3.2);
+    return `<div class="di-core"></div><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path d="${d}" pathLength="100" fill="none" stroke="currentColor" stroke-opacity=".22" stroke-width="3.2"/><path d="${d}" pathLength="100" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="${I.pct} 100"/></svg>`; }
+  if(style==='live'){ const done = I.pct>=100;
+    return `<div class="di-core"></div><span class="di-l">${I.pct}%</span><span class="di-r">${done ? '✓' : I.next ? escapeHtml(fmtClockTime(I.next).replace(/\s?(AM|PM)$/i,'')) : '•'}</span>`; }
+  return '<div class="di-core"></div>';
+}
+let diLastPct = null;
+function diUpdate(){
+  try{
+    let el = document.getElementById('diHalo');
+    const st = diStyle(), on = st!=='off' && diHasIsland();
+    document.documentElement.classList.toggle('di-on', on);
+    if(!on){ if(el) el.innerHTML = ''; return; }
+    if(!el){ el = document.createElement('div'); el.id = 'diHalo'; el.setAttribute('aria-hidden','true'); document.body.appendChild(el); }
+    const top = diSafeTop();
+    el.style.setProperty('--di-top', Math.max(8, Math.round(top/2 - 18.5)) + 'px');
+    el.style.setProperty('--di-c', diColor());
+    el.className = 'di di-' + st;
+    el.innerHTML = diInnerHtml(st);
+    const p = diInfo().pct;
+    if(diLastPct!=null && p > diLastPct){ el.classList.add('di-bump'); setTimeout(()=>el.classList.remove('di-bump'), 900); }
+    diLastPct = p;
+  }catch(e){ console.error(e); }
+}
+function diSet(k, v){ state[k] = v; saveState(); render(); diUpdate(); }
+function diSettingsHtml(){
+  const st = diStyle(), c = (state && state.islandColor) || 'accent', live = diHasIsland();
+  return `<div class="section-label">Dynamic Island</div><div class="card">
+    <div class="row" style="flex-wrap:wrap">
+      <div class="row-text" style="flex-basis:100%;margin-bottom:10px"><div class="row-title">Island design</div><div class="row-sub">${live ? 'Shows on this iPhone around the Dynamic Island' : 'Shows on an iPhone 14 Pro or newer when LifeOS is opened from the Home Screen. Preview below'}</div></div>
+      <div class="di-prev"><div class="di-prev-hw"></div><div class="di di-${st}" style="--di-c:${diColor()}">${st==='off' ? '' : diInnerHtml(st)}</div></div>
+      <div class="chip-row" style="margin-top:12px">${DI_STYLES.map(x=>`<button type="button" class="chip ${st===x[0]?'active':''}" onclick="diSet('islandStyle','${x[0]}')">${x[1]}</button>`).join('')}</div>
+    </div>
+    ${st==='off' ? '' : `<div class="row" style="flex-wrap:wrap"><div class="row-text" style="flex-basis:100%;margin-bottom:8px"><div class="row-title">Colour</div><div class="row-sub">${st==='rainbow' ? 'Rainbow uses every colour' : st==='progress' ? 'Fills around the island as you tick today off' : st==='live' ? 'Left: today done. Right: when your next task is' : 'Brightens for a moment every time you tick something off'}</div></div>
+      <div class="chip-row">${DI_COLORS.map(x=>`<button type="button" class="chip ${c===x[0]?'active':''}" onclick="diSet('islandColor','${x[0]}')"><span class="di-sw" style="background:${x[0]==='accent'?'var(--accent)':x[0]==='white'?'#fff':x[0]}"></span>${x[1]}</button>`).join('')}</div></div>`}
+  </div>`;
+}
+(function(){
+  const hook = ()=>{
+    if(typeof render==='function' && !render.__di){ const o = render; render = function(){ const r = o.apply(this, arguments); diUpdate(); return r; }; render.__di = true; }
+    diUpdate();
+  };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', hook); else setTimeout(hook, 0);
+  setInterval(diUpdate, 30000);
+  window.addEventListener('resize', ()=>diUpdate());
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) diUpdate(); });
+})();
 function fxDisplayHtml(){
   const on = !(state && state.animOff), st = fxStyle();
   return `<div class="section-label">Animations</div><div class="card">
@@ -16621,22 +16735,8 @@ function wkLiveHtml(A){
     const isC = e.kind==='cardio', isT = e.kind==='time';
     const head = isC ? '<div class="wk-gh">#</div><div class="wk-gh">Last</div><div class="wk-gh">Min</div><div class="wk-gh">Km/notes</div><div class="wk-gh">✓</div>'
                      : `<div class="wk-gh">#</div><div class="wk-gh">Last</div><div class="wk-gh">Kg</div><div class="wk-gh">${isT?'Sec':'Reps'}</div><div class="wk-gh">✓</div>`;
-    const rows = e.sets.map((x,si)=>{
-      const prev = last ? last.sets[Math.min(si, last.sets.length-1)] : null;
-      const prevSame = si>0 ? e.sets[si-1] : null;
-      const earlierKg = e.sets.slice(0, si).map(y=>y.kg).filter(v=>v!=='' && v!=null).pop();
-      const phKg = sg.kg!=null ? wkFmtKg(sg.kg) : earlierKg!=null ? earlierKg : prev && Number(prev.kg) ? wkFmtKg(prev.kg) : '';
-      const phR = isT ? (prev && prev.s ? prev.s : e.lo) : (sg.reps ? sg.reps[Math.min(si, sg.reps.length-1)] : sg.r!=null ? sg.r : prev && prev.r ? prev.r : e.lo);
-      const idb = `wk-${ei}-${si}`;
-      if(isC) return `<div class="wk-sn">${si+1}</div><div class="wk-prev">${prev ? escapeHtml(wkSetTxt(prev,'cardio')) : '–'}</div>
-        <input class="wk-in" id="${idb}-m" type="number" inputmode="decimal" placeholder="${escapeHtml(String(prev && prev.m ? prev.m : e.lo))}" value="${escapeHtml(x.m||'')}" oninput="wkSetVal(${ei},${si},'m',this.value)">
-        <input class="wk-in" id="${idb}-d" type="text" placeholder="${escapeHtml(prev && prev.d ? prev.d : 'e.g. 4 km')}" value="${escapeHtml(x.d||'')}" oninput="wkSetVal(${ei},${si},'d',this.value)">
-        <button type="button" class="wk-ck ${x.done?'on':''}" onclick="wkTickSet(${ei},${si})" aria-label="Set ${si+1} done">✓</button>`;
-      return `<div class="wk-sn">${si+1}${x.pr?'<br><span class="wk-pr">PR</span>':''}</div><div class="wk-prev">${prev ? escapeHtml(wkSetTxt(prev, e.kind)) : '–'}</div>
-        <input class="wk-in" id="${idb}-kg" type="number" inputmode="decimal" step="0.25" placeholder="${escapeHtml(String(phKg))}" value="${escapeHtml(x.kg||'')}" oninput="wkSetVal(${ei},${si},'kg',this.value)" aria-label="Kilograms">
-        <input class="wk-in" id="${idb}-${isT?'s':'r'}" type="number" inputmode="numeric" placeholder="${escapeHtml(String(phR))}" value="${escapeHtml((isT?x.s:x.r)||'')}" oninput="wkSetVal(${ei},${si},'${isT?'s':'r'}',this.value)" aria-label="${isT?'Seconds':'Reps'}">
-        <button type="button" class="wk-ck ${x.done?'on':''}" onclick="wkTickSet(${ei},${si})" aria-label="Set ${si+1} done">✓</button>`;
-    }).join('');
+    const rows = e.sets.map((x,si)=>`<div class="wk-swipe" data-ei="${ei}" data-si="${si}"><div class="wk-del-bg">Delete</div><div class="wk-row">${wkSetRowHtml(e,x,ei,si,sg,last,isC,isT)}</div></div>`).join('');
+
     const rec = R.n ? (isC ? (R.mins ? 'Longest '+R.mins+' min' : '') : R.e1 ? 'Best '+wkFmtKg(R.kg)+' kg × '+R.kgR+' · est. 1RM '+Math.round(R.e1) : R.reps ? 'Best '+R.reps+' reps' : R.secs ? 'Best '+R.secs+' sec' : '') : '';
     return `<div class="wk-sx ${allDone?'alldone':''}" id="wkx-${ei}">
       <div class="wk-sx-h"><div class="wk-num">${ei+1}</div><div class="wk-ex-b" onclick="wkExInfo('${escapeHtml(wkKey(e.name))}')">
@@ -16658,6 +16758,22 @@ function wkLiveHtml(A){
     <button type="button" class="wk-add" onclick="wkAddExercise()">+ Add exercise</button>
     <div class="wk-card"><div class="wk-h">Notes</div><textarea class="wk-note" rows="2" placeholder="How did it feel? Sleep, energy, anything sore" oninput="wkSetNote(this.value)">${escapeHtml(A.note||'')}</textarea></div>
     <button type="button" class="btn-primary wk-bigfin" onclick="wkFinish()">Finish workout</button>`;
+}
+function wkSetRowHtml(e,x,ei,si,sg,last,isC,isT){
+      const prev = last ? last.sets[Math.min(si, last.sets.length-1)] : null;
+      const prevSame = si>0 ? e.sets[si-1] : null;
+      const earlierKg = e.sets.slice(0, si).map(y=>y.kg).filter(v=>v!=='' && v!=null).pop();
+      const phKg = sg.kg!=null ? wkFmtKg(sg.kg) : earlierKg!=null ? earlierKg : prev && Number(prev.kg) ? wkFmtKg(prev.kg) : '';
+      const phR = isT ? (prev && prev.s ? prev.s : e.lo) : (sg.reps ? sg.reps[Math.min(si, sg.reps.length-1)] : sg.r!=null ? sg.r : prev && prev.r ? prev.r : e.lo);
+      const idb = `wk-${ei}-${si}`;
+      if(isC) return `<div class="wk-sn">${si+1}</div><div class="wk-prev">${prev ? escapeHtml(wkSetTxt(prev,'cardio')) : '–'}</div>
+        <input class="wk-in" id="${idb}-m" type="number" inputmode="decimal" placeholder="${escapeHtml(String(prev && prev.m ? prev.m : e.lo))}" value="${escapeHtml(x.m||'')}" oninput="wkSetVal(${ei},${si},'m',this.value)">
+        <input class="wk-in" id="${idb}-d" type="text" placeholder="${escapeHtml(prev && prev.d ? prev.d : 'e.g. 4 km')}" value="${escapeHtml(x.d||'')}" oninput="wkSetVal(${ei},${si},'d',this.value)">
+        <button type="button" class="wk-ck ${x.done?'on':''}" onclick="wkTickSet(${ei},${si})" aria-label="Set ${si+1} done">✓</button>`;
+      return `<div class="wk-sn">${si+1}${x.pr?'<br><span class="wk-pr">PR</span>':''}</div><div class="wk-prev">${prev ? escapeHtml(wkSetTxt(prev, e.kind)) : '–'}</div>
+        <input class="wk-in" id="${idb}-kg" type="number" inputmode="decimal" step="0.25" placeholder="${escapeHtml(String(phKg))}" value="${escapeHtml(x.kg||'')}" oninput="wkSetVal(${ei},${si},'kg',this.value)" aria-label="Kilograms">
+        <input class="wk-in" id="${idb}-${isT?'s':'r'}" type="number" inputmode="numeric" placeholder="${escapeHtml(String(phR))}" value="${escapeHtml((isT?x.s:x.r)||'')}" oninput="wkSetVal(${ei},${si},'${isT?'s':'r'}',this.value)" aria-label="${isT?'Seconds':'Reps'}">
+        <button type="button" class="wk-ck ${x.done?'on':''}" onclick="wkTickSet(${ei},${si})" aria-label="Set ${si+1} done">✓</button>`;
 }
 function wkSetVal(ei, si, k, v){
   const A = wkActive(); const x = A && A.ex[ei] && A.ex[ei].sets[si]; if(!x) return;
@@ -16695,6 +16811,50 @@ function wkTickSet(ei, si){
   renderWorkout();
 }
 function wkAddSet(ei){ const A = wkActive(), e = A && A.ex[ei]; if(!e) return; const l = e.sets[e.sets.length-1]; e.sets.push({kg: l && l.kg ? l.kg : '', r:'', done:false}); saveState(); renderWorkout(); }
+function wkSwipeDelete(ei, si){
+  const A = wkActive(), e = A && A.ex[ei]; if(!e || !e.sets[si]){ renderWorkout(); return; }
+  if(e.sets.length < 2){ toast('That\'s the last set. Use ⋯ to remove the exercise'); renderWorkout(); return; }
+  const removed = e.sets.splice(si, 1)[0], aid = A.id; saveState(); renderWorkout();
+  try{ if(navigator.vibrate) navigator.vibrate(12); }catch(err){}
+  toast('Set '+(si+1)+' deleted', 'Undo', ()=>{ const B = wkActive(), f = B && B.id===aid && B.ex[ei]; if(!f) return; f.sets.splice(Math.min(si, f.sets.length), 0, removed); saveState(); renderWorkout(); });
+}
+/* Swipe a set row left to delete it (vertical scrolling still works normally). */
+(function(){
+  let S = null, swipedAt = 0;
+  const reset = s=>{ s.row.style.transform=''; s.row.classList.remove('swiping'); s.wrap.classList.remove('arm'); };
+  document.addEventListener('pointerdown', e=>{
+    const row = e.target.closest && e.target.closest('.wk-row'); if(!row) return;
+    if(e.pointerType==='mouse' && e.button!==0) return;
+    S = {row, wrap:row.parentElement, x:e.clientX, y:e.clientY, id:e.pointerId, on:false, dx:0};
+  }, {passive:true});
+  document.addEventListener('pointermove', e=>{
+    if(!S || e.pointerId!==S.id) return;
+    const dx = e.clientX-S.x, dy = e.clientY-S.y;
+    if(!S.on){
+      if(Math.abs(dy)>10 && Math.abs(dy)>Math.abs(dx)){ S = null; return; }
+      if(dx < -12 && Math.abs(dx) > Math.abs(dy)*1.3){ S.on = true; S.row.classList.add('swiping'); try{ const a = document.activeElement; if(a && S.row.contains(a)) a.blur(); }catch(err){} }
+      else return;
+    }
+    S.dx = Math.min(0, dx);
+    S.row.style.transform = 'translateX('+S.dx+'px)';
+    S.wrap.classList.toggle('arm', -S.dx > Math.min(120, S.row.offsetWidth*0.35));
+  }, {passive:true});
+  const end = e=>{
+    if(!S || e.pointerId!==S.id) return; const s = S; S = null; if(!s.on) return;
+    swipedAt = Date.now();
+    s.row.classList.remove('swiping');
+    if(-s.dx > Math.min(120, s.row.offsetWidth*0.35)){
+      s.row.style.transform = 'translateX(-110%)';
+      s.wrap.style.height = s.wrap.offsetHeight+'px';
+      requestAnimationFrame(()=>s.wrap.classList.add('gone'));
+      setTimeout(()=>wkSwipeDelete(+s.wrap.dataset.ei, +s.wrap.dataset.si), 220);
+    } else reset(s);
+  };
+  document.addEventListener('pointerup', end);
+  document.addEventListener('pointercancel', e=>{ if(S && e.pointerId===S.id){ if(S.on) reset(S); S = null; } });
+  /* a swipe that ends on the tick button must not also tick the set */
+  document.addEventListener('click', e=>{ if(Date.now()-swipedAt < 400 && e.target.closest && e.target.closest('.wk-swipe')){ e.stopPropagation(); e.preventDefault(); } }, true);
+})();
 function wkRemoveSet(ei){ const A = wkActive(), e = A && A.ex[ei]; if(!e || e.sets.length<2) return; const i = e.sets.map(x=>x.done).lastIndexOf(false); e.sets.splice(i>=0 ? i : e.sets.length-1, 1); saveState(); renderWorkout(); }
 function wkExMenu(ei){
   const A = wkActive(), e = A && A.ex[ei]; if(!e) return;
@@ -16994,7 +17154,12 @@ function wkProgressHtml(){
   const pts = H.map(h=>({d:h.s.date, v: Math.max(...h.sets.map(x=>wkE1(x.kg,x.r))) || Math.max(...h.sets.map(x=>Number(x.r)||0))}));
   const bw = !R.e1;
   return `
-    <div class="wk-chips" style="margin-top:6px">${keys.map(k=>`<button type="button" class="chip ${k.k===wkProgKey?'active':''}" onclick="wkProgKey='${escapeHtml(k.k)}';renderWorkout()">${escapeHtml(k.name)}</button>`).join('')}</div>
+    ${(()=>{ const i = keys.findIndex(k=>k.k===wkProgKey), pv = keys[(i-1+keys.length)%keys.length], nx = keys[(i+1)%keys.length];
+      return `<div class="wk-pick">
+        <button type="button" class="wk-pick-arr" onclick="wkProgKey='${escapeHtml(pv.k)}';renderWorkout()" aria-label="Previous exercise">‹</button>
+        <button type="button" class="wk-pick-main" onclick="wkOpenExPicker()"><small>Exercise ${i+1} of ${keys.length}</small><b>${escapeHtml(cur.name)}</b><span>Change ▾</span></button>
+        <button type="button" class="wk-pick-arr" onclick="wkProgKey='${escapeHtml(nx.k)}';renderWorkout()" aria-label="Next exercise">›</button>
+      </div>`; })()}
     <div class="wk-card"><div class="wk-h">${escapeHtml(cur.name)}<span>${bw ? 'Best reps' : 'Est. 1 rep max'} · ${H.length} session${H.length===1?'':'s'}</span></div>
       ${wkLineSvg(pts, bw ? '' : ' kg')}
       <div class="tl-read" id="wkLineRead">${pts.length>1 ? (()=>{ const a = pts[0].v, b = pts[pts.length-1].v, d = Math.round((b-a)*10)/10; return d>0 ? 'Up '+d+(bw?' reps':' kg')+' since '+fmtDM(pts[0].d)+'.' : d<0 ? 'Down '+Math.abs(d)+(bw?' reps':' kg')+' since '+fmtDM(pts[0].d)+'.' : 'Level since '+fmtDM(pts[0].d)+'.'; })()+' Tap a point for that day.' : 'Log it again to start the line.'}</div>
@@ -17004,6 +17169,22 @@ function wkProgressHtml(){
       <table class="wk-tbl">${H.slice(-6).reverse().map(h=>`<tr><td>${fmtDM(h.s.date)}</td><td>${h.sets.map(x=>escapeHtml(wkSetTxt(x, h.e.kind))).join(', ')}</td></tr>`).join('')}</table></div>
     ${wkWeeklyHtml()}
     ${wkBodyCardHtml(false)}`;
+}
+function wkOpenExPicker(){
+  const keys = wkLoggedKeys(); if(!keys.length) return;
+  const plans = (wkS().plans||[]), used = new Set(), groups = [];
+  plans.forEach(p=>{ const ks = (p.ex||[]).map(x=>wkKey(x.name)).filter(k=>keys.some(o=>o.k===k) && !used.has(k)); ks.forEach(k=>used.add(k)); if(ks.length) groups.push({name:p.name, items:ks.map(k=>keys.find(o=>o.k===k))}); });
+  const rest = keys.filter(k=>!used.has(k)); if(rest.length) groups.push({name: groups.length ? 'Other' : 'Exercises', items:rest});
+  openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>Pick an exercise</h2><span></span></div>
+    <div class="sheet-body">
+      <input type="search" class="wk-pick-q" placeholder="Search ${keys.length} exercises" oninput="wkFilterPicker(this.value)">
+      ${groups.map(g=>`<div class="section-label wk-pg">${escapeHtml(g.name)}</div><div class="wk-pick-grid">${g.items.map(k=>`<button type="button" class="wk-pick-it ${k.k===wkProgKey?'on':''}" data-n="${escapeHtml(k.name.toLowerCase())}" onclick="wkProgKey='${escapeHtml(k.k)}';closeSheet();renderWorkout()"><b>${escapeHtml(k.name)}</b><small>${k.n} session${k.n===1?'':'s'}</small></button>`).join('')}</div>`).join('')}
+    </div>`);
+}
+function wkFilterPicker(q){
+  q = String(q||'').trim().toLowerCase();
+  document.querySelectorAll('.wk-pick-it').forEach(b=>{ b.style.display = !q || b.dataset.n.includes(q) ? '' : 'none'; });
+  document.querySelectorAll('.wk-pick-grid').forEach(g=>{ const any = [...g.children].some(c=>c.style.display!=='none'); g.style.display = any ? '' : 'none'; const l = g.previousElementSibling; if(l) l.style.display = any ? '' : 'none'; });
 }
 function wkLineSvg(pts, unit){
   if(pts.length<1) return '';
