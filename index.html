@@ -5470,7 +5470,8 @@ function routineTile(it, lifeFocusId, ecomFocusId, date, isNext){
   const swipe = (editable && !isChecklist && !bundleMode) ? `data-swipe data-swipe-right="${c.done}" data-swipe-left="openRoutineActions(${c.a})"` : '';
   const frac = isChecklist ? (list.length ? listDone/list.length : 0) : (st ? reqFraction(it,date,st) : 0);
   const showRing = !it.done && (st || isChecklist);
-  const cls = ['rt', bundleable?'selectable':'', bSel?'selected':'', it.done?'done':'', blocked?'pending':'', (isNext&&!it.done)?'next':'', open?'open':''].filter(Boolean).join(' ');
+  const inside = (!bundleMode && !open) ? rtInsideHtml(it, date) : '';
+  const cls = ['rt', bundleable?'selectable':'', bSel?'selected':'', it.done?'done':'', blocked?'pending':'', (isNext&&!it.done)?'next':'', open?'open':'', inside?'rt-has-in':''].filter(Boolean).join(' ');
   const checkLabel = it.done ? 'Completed. Tap to undo' : isChecklist ? 'Open checklist' : blocked ? 'Requirements not met yet' : 'Mark complete';
   return `<div class="${cls}" data-key="${escapeHtml(key)}" ${swipe} ${editable&&!bundleMode?`data-hold="peekTask(${c.a})"`:''}>
     <div class="rt-face" ${bundleMode ? (bundleable?`onclick="toggleBundleSel('${bKey}')"`:'') : (editable?`onclick="${c.drop}"`:'')}>
@@ -5486,6 +5487,7 @@ function routineTile(it, lifeFocusId, ecomFocusId, date, isNext){
         ${editable?`<button class="rt-drop" type="button" aria-expanded="${open}" aria-label="Show details for ${escapeHtml(plainTitle(it.title))}" onclick="event.stopPropagation();${c.drop}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>`:''}
       </div>
     </div>
+    ${inside}
     ${editable && !bundleMode ? tileDropdown(it, focusId, date, c) : ''}
   </div>`;
 }
@@ -7709,6 +7711,7 @@ function renderTodaysListPage(){
         <div class="row-title" style="margin-bottom:4px">Plan Your Day</div>
         <div class="row-sub" style="margin-bottom:16px">Create a list of everything you want to get done ${dateStr===todayISO()?'today':'on '+dt.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'})}.</div>
         <button class="btn-primary" data-hold="cpPasteToList('${dateStr}')" onclick="createTodaysList('${dateStr}')">Create Today's List</button>
+        ${cpGet() ? `<button type="button" class="btn-secondary" style="margin-top:10px" onclick="cpPasteToList('${dateStr}')">Paste ${escapeHtml(cpClipLabel())}</button>` : ''}
       </div>
       <div style="height:80px"></div>
     `;
@@ -7719,7 +7722,7 @@ function renderTodaysListPage(){
     ${dateChips}
     <div class="section-label-row">
       <div class="section-label" style="padding:0">Today's List · ${dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</div>
-      <div class="row-sub">${doneCount}/${items.length} completed</div>
+      <div class="tl-cp"><span class="row-sub">${doneCount}/${items.length} done</span><button type="button" class="tl-cpb" onclick="tlCopyAll('${dateStr}')">Copy all</button>${cpGet() ? `<button type="button" class="tl-cpb pri" onclick="cpPasteToList('${dateStr}')">Paste ${escapeHtml(cpClipLabel())}</button>` : ''}</div>
     </div>
     <div class="card">${items.map((it,idx)=>todaysListItemRow(it,dateStr,idx,items.length)).join('')}</div>
     ${doneCount===items.length && items.length ? `<div style="text-align:center;margin:10px 0;color:var(--green);font-weight:600;font-size:13px">🎉 Today's List is fully complete!</div>` : `<button type="button" class="sheet-btn" style="width:100%;margin:8px 0 0;padding:10px;border-radius:12px;background:var(--fill)" onclick="cpCopyLeft('${dateStr}')">📋 Copy the ${items.length-doneCount} not ticked</button>`}
@@ -8644,8 +8647,10 @@ function renderProfilesCard(){
           ${dayDotsHtml(r.days)}
         </div>`).join('')}
       <div class="row" onclick="openAddRoutineItem()"><div class="row-text row-title" style="color:var(--blue)">+ Add Task</div></div>
+      <div class="row" onclick="rpOpen(null)"><div class="row-text"><div class="row-title" style="color:var(--blue)">🔄 + Add repeating task</div><div class="row-sub">Every day, chosen days, every few days, weekly, fortnightly or monthly. Shows up in your current routine straight away</div></div></div>
       <div class="row" onclick="openProfileEditor('${active.id}')"><div class="row-text row-title" style="color:var(--blue)">Rename / Duplicate / Delete Profile</div></div>
     </div>
+    ${rpCardHtml()}
   `;
 }
 function routineTemplateRow(t){
@@ -9719,6 +9724,7 @@ function renderSettingsPanel(){
     ${actLayoutSettingHtml()}`;
   S.access = accessSettingsHtml();
   S.routine = `
+${rtInsideSettingHtml()}
 <div class="section-label">Task requirements</div>
     <div class="card">
       <div class="row">
@@ -12160,7 +12166,7 @@ let suppressClickUntil = 0;
 (function(){
   let h = null;
   const cancel = ()=>{ if(h){ clearTimeout(h.t); h.el.classList.remove('holding'); h = null; } };
-  const run = el=>{ suppressClickUntil = Date.now() + 650; try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_){}
+  const run = el=>{ window.__holdEl = el; window.__holdAt = Date.now(); suppressClickUntil = Date.now() + 650; try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_){}
     try{ (new Function(el.dataset.hold))(); }catch(err){ console.error(err); } };
   document.addEventListener('pointerdown', e=>{
     if(e.button>0) return;
@@ -18113,6 +18119,239 @@ function acPack(grid){
   setInterval(()=>{ if(state && state.majorShown!==todayISO()) mjMaybeShow(); }, 60000);
 })();
 
+/* ================================================================
+   22 Nov 2026 (evening) additions
+   1. Routine design: each task's note and steps shown on its tile (switchable)
+   2. Hold a task: it expands into a clear, highlighted tile over a frosted screen
+   3. Today's List: one-tap Copy all + Paste
+   4. Schedule: repeating tasks
+   ================================================================ */
+
+/* ---------- 1. Routine tiles show what's inside ---------- */
+function rtInsideOn(){ return !!(state && state.rtShowInside); }
+function rtToggleInside(){ state.rtShowInside = !rtInsideOn(); saveState(); render(); toast(rtInsideOn() ? 'Routine tasks show what\'s inside' : 'Hold a task to see what\'s inside'); }
+function rtInsideSettingHtml(){
+  return `<div class="section-label">Routine design</div><div class="card">
+    ${setToggleRow('Show what\'s in each task', rtInsideOn() ? 'On. Each routine task shows its note, steps and what still needs logging right on the Dashboard. Hold a task to see it bigger' : 'Off. Tasks show just their name. Hold one to see what\'s inside', rtInsideOn(), 'rtToggleInside()')}
+  </div>`;
+}
+function rtInsideHtml(it, date){
+  try{
+    if(!rtInsideOn() || !it || it.done) return '';
+    const note = it.note && String(it.note).trim() ? String(it.note).trim() : '';
+    let steps = [];
+    if(it.type==='checklist') steps = (it.checklist||[]).map(c=>({t:c.title||c.text||'', d:!!c.done}));
+    else {
+      steps = taskSteps(it).map(x=>({t:x.title||'', d:!!x.done}));
+      const st = reqStatus(it, date);
+      if(st) st.rows.filter(r=>!r.ok && !(r.type==='steps' && r.hasSteps) && !r.optional).forEach(r=>steps.push({t:(r.label||r.short||''), d:false, log:true}));
+    }
+    if(!note && !steps.length) return '';
+    const MAX = 6, more = steps.length - MAX;
+    return `<div class="rt-in" onclick="const f=this.parentElement.querySelector('.rt-face');if(f)f.click()">${note ? `<div class="rt-in-n">${escapeHtml(note)}</div>` : ''}${steps.length ? `<ul class="rt-in-l">${steps.slice(0,MAX).map(x=>`<li class="${x.d?'on':''} ${x.log?'log':''}"><i></i><span>${escapeHtml(plainTitle(x.t))}</span></li>`).join('')}${more>0 ? `<li class="more">+${more} more</li>` : ''}</ul>` : ''}</div>`;
+  }catch(e){ console.error(e); return ''; }
+}
+
+/* ---------- 2. Hold: expand the task into a clear tile ---------- */
+function pkClose(){
+  const b = document.getElementById('pkBd'); if(!b) return;
+  const src = b.__src; if(src) src.classList.remove('pk-src');
+  if(b.classList.contains('closing')) return;
+  b.classList.add('closing'); b.id = '';
+  setTimeout(()=>b.remove(), 200);
+}
+function pkOpen(inner){
+  const old = document.getElementById('pkBd'); if(old){ if(old.__src) old.__src.classList.remove('pk-src'); old.remove(); }
+  const b = document.createElement('div');
+  b.className = 'pk-bd'; b.id = 'pkBd';
+  b.innerHTML = `<div class="pk" role="dialog" aria-modal="true" onclick="event.stopPropagation()">${inner}</div>`;
+  b.addEventListener('click', e=>{ if(e.target===b) pkClose(); });
+  document.body.appendChild(b);
+  /* grow out of the task you held */
+  const src = window.__holdEl && (Date.now() - (window.__holdAt||0) < 1500) && document.contains(window.__holdEl) ? window.__holdEl : null;
+  const card = b.querySelector('.pk');
+  if(src && (typeof fxOn!=='function' || fxOn())){
+    try{
+      const r = src.getBoundingClientRect(), f = card.getBoundingClientRect();
+      if(r.width > 20 && f.width > 20){
+        b.__src = src; src.classList.add('pk-src');
+        card.style.animation = 'none';
+        card.style.transformOrigin = 'top left';
+        card.style.transform = `translate(${r.left-f.left}px,${r.top-f.top}px) scale(${r.width/f.width},${Math.max(.15, r.height/f.height)})`;
+        card.style.opacity = '.4';
+        card.getBoundingClientRect();
+        card.style.transition = 'transform .42s cubic-bezier(.2,.9,.25,1.05), opacity .25s ease';
+        card.style.transform = 'none'; card.style.opacity = '1';
+      }
+    }catch(e){}
+  }
+  window.__holdEl = null;
+}
+
+/* ---------- 3. Today's List: Copy all ---------- */
+function tlCopyAll(dateStr){
+  const l = (state.todaysLists||{})[dateStr];
+  const all = l ? l.items.slice().sort((x,y)=>(x.order||0)-(y.order||0)) : [];
+  if(!all.length){ toast('Nothing on this list yet'); return; }
+  const text = all.map(x=>(x.done?'- [x] ':'- ')+(x.kind==='reminder'?'🔔 ':'')+x.title+(x.note?' ('+String(x.note).replace(/\s+/g,' ').trim()+')':'')).join('\n');
+  try{ if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(()=>{}); }catch(e){}
+  cpSet(all.map(cpFromTl), 'Copied all '+all.length+' item'+(all.length===1?'':'s')+'. Go to any day and tap Paste');
+  render();
+}
+
+/* ---------- 4. Schedule: repeating tasks ----------
+   state.repeatTasks = [{id, title, time, note, rule:{kind:'week'|'interval'|'monthly', days:[0-6], every:n}, start, end}]
+   Each matching day from today on (in your active Life Focus) gets its own
+   copy of the task, with id rp_<task>_<date>. Delete or move one copy and
+   only that day is skipped; edit the repeating task and every future,
+   unticked copy updates. */
+function rpList(){ if(!Array.isArray(state.repeatTasks)) state.repeatTasks = []; return state.repeatTasks; }
+function rpDiff(a, b){ return Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00'))/864e5); }
+function rpMatches(t, ds){
+  if(!t || !t.rule) return false;
+  if(t.start && ds < t.start) return false;
+  if(t.end && ds > t.end) return false;
+  const R = t.rule, dow = new Date(ds+'T00:00:00').getDay(), st = t.start || ds;
+  if(R.kind==='interval'){ const n = Math.max(1, Number(R.every)||1); return rpDiff(st, ds) % n === 0; }
+  if(R.kind==='monthly'){ const dom = Number(R.dom) || Number(st.slice(8,10)); const d = new Date(ds+'T00:00:00'); const last = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate(); return d.getDate() === Math.min(dom, last); }
+  const days = Array.isArray(R.days) && R.days.length ? R.days : [0,1,2,3,4,5,6];
+  if(!days.includes(dow)) return false;
+  const n = Math.max(1, Number(R.every)||1); if(n===1) return true;
+  const wk = Math.floor(rpDiff(mondayOfRp(st), mondayOfRp(ds))/7);
+  return wk % n === 0;
+}
+function mondayOfRp(ds){ const d = new Date(ds+'T00:00:00'); const k = (d.getDay()+6)%7; d.setDate(d.getDate()-k); return isoDate(d); }
+function rpRuleText(t){
+  const R = t.rule || {};
+  let s;
+  if(R.kind==='interval') s = Number(R.every)>1 ? 'Every '+R.every+' days' : 'Every day';
+  else if(R.kind==='monthly') s = 'Monthly on the '+ordinalRp(Number(R.dom)||Number((t.start||todayISO()).slice(8,10)));
+  else {
+    const days = Array.isArray(R.days) && R.days.length && R.days.length<7 ? R.days : null;
+    const every = Math.max(1, Number(R.every)||1);
+    const dn = days ? DOW_ORDER_MON.filter(d=>days.includes(d)).map(d=>DOW_SHORT[d]).join(', ') : 'every day';
+    s = every===1 ? (days ? 'Every '+dn : 'Every day') : every===2 ? 'Fortnightly · '+dn : 'Every '+every+' weeks · '+dn;
+  }
+  if(t.time) s += ' · '+fmtClockTime(t.time);
+  if(t.end) s += ' · until '+fmtDM(t.end);
+  return s;
+}
+function ordinalRp(n){ const s = ['th','st','nd','rd'], v = n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+let rpApplying = false;
+function rpApply(){
+  if(rpApplying || !state) return false;
+  rpApplying = true;
+  let changed = false;
+  try{
+    const tasks = rpList(), ids = new Set(tasks.map(t=>t.id)), today = todayISO();
+    const f = getActiveLifeFocus(); if(!f || !Array.isArray(f.days)) return false;
+    f.days.forEach(day=>{
+      if(!day || day.date < today || !Array.isArray(day.items)) return;
+      /* tidy: copies of deleted repeating tasks, and edits to the ones that are left */
+      for(let i=day.items.length-1;i>=0;i--){
+        const it = day.items[i]; if(!it || !it.repeatId) continue;
+        const t = tasks.find(x=>x.id===it.repeatId);
+        if(!t || !rpMatches(t, day.date)){ if(!it.done){ day.items.splice(i,1); changed = true; } continue; }
+        if(!it.done){
+          const want = {title:t.title, note:t.note||'', time:t.time||'', displayText: t.time ? '' : 'Any time'};
+          if(Object.keys(want).some(k=>(it[k]||'')!==want[k])){ Object.assign(it, want); changed = true; }
+        }
+      }
+      tasks.forEach(t=>{
+        if(!rpMatches(t, day.date)) return;
+        if((day.rpSkip||[]).includes(t.id)) return;
+        const id = 'rp_'+t.id+'_'+day.date.replace(/-/g,'');
+        if(day.items.some(x=>x && (x.id===id || x.repeatId===t.id))) return;
+        insertItemByTime(day, {id, repeatId:t.id, refId:'rp_'+t.id, type:'item', category:'routine', title:t.title, note:t.note||'', time:t.time||'', displayText: t.time ? '' : 'Any time', done:false, expanded:false});
+        changed = true;
+      });
+      day.items.forEach((x,i)=>{ if(x.order!==i){ x.order = i; } });
+    });
+    if(changed) saveState();
+  }catch(e){ console.error('repeat tasks', e); }
+  finally{ rpApplying = false; }
+  return changed;
+}
+/* a copy you delete or move away is skipped on that day, not re-added */
+function rpTombstone(focusId, date, itemId){
+  try{ const loc = findItemLocation(focusId, date, itemId); if(loc && loc.item && loc.item.repeatId){ loc.day.rpSkip = Array.from(new Set([...(loc.day.rpSkip||[]), loc.item.repeatId])); } }catch(e){}
+}
+function rpCardHtml(){
+  const L = rpList();
+  return `<div class="section-label">🔄 Repeating tasks</div><div class="card">
+    ${L.length ? L.map(t=>`<div class="row" style="cursor:pointer" onclick="rpOpen('${t.id}')" data-hold="rpOpen('${t.id}')"><div class="row-text"><div class="row-title">${escapeHtml(t.title)}</div><div class="row-sub">${escapeHtml(rpRuleText(t))}</div></div><div class="chevron">›</div></div>`).join('') : `<div class="row"><div class="row-text"><div class="row-sub">No repeating tasks yet. They go straight into your current routine on the days they repeat.</div></div></div>`}
+    <div class="row" style="cursor:pointer" onclick="rpOpen(null)"><div class="row-text row-title" style="color:var(--blue)">+ Add repeating task</div></div>
+  </div>`;
+}
+let rpEdit = null;
+function rpOpen(id){
+  const t = id ? rpList().find(x=>x.id===id) : null;
+  rpEdit = t ? JSON.parse(JSON.stringify(t)) : {id:null, title:'', time:'', note:'', rule:{kind:'week', days:[], every:1}, start: todayISO(), end:''};
+  rpRender();
+}
+function rpRender(){
+  const t = rpEdit; if(!t) return;
+  const R = t.rule;
+  const kindChip = (k,l)=>`<button type="button" class="chip ${R.kind===k?'active':''}" onclick="rpSet('kind','${k}')">${l}</button>`;
+  const sel = Array.isArray(R.days) ? R.days : [];
+  let body = '';
+  if(R.kind==='week'){
+    body = `<div class="field"><label>On these days (none = every day)</label><div class="chip-row">${DOW_ORDER_MON.map(d=>`<button type="button" class="chip ${sel.includes(d)?'active':''}" onclick="rpDay(${d})">${DOW_SHORT[d]}</button>`).join('')}</div>
+      <div class="chip-row" style="margin-top:8px"><button type="button" class="chip" onclick="rpDays([])">Every day</button><button type="button" class="chip" onclick="rpDays([1,2,3,4,5])">Weekdays</button><button type="button" class="chip" onclick="rpDays([0,6])">Weekends</button></div></div>
+      <div class="field"><label>How often</label><div class="chip-row">${[[1,'Every week'],[2,'Every 2 weeks'],[3,'Every 3 weeks'],[4,'Every 4 weeks']].map(([n,l])=>`<button type="button" class="chip ${(Number(R.every)||1)===n?'active':''}" onclick="rpSet('every',${n})">${l}</button>`).join('')}</div></div>`;
+  } else if(R.kind==='interval'){
+    body = `<div class="field"><label>Every how many days?</label><div class="chip-row">${[2,3,4,5,7,10,14].map(n=>`<button type="button" class="chip ${(Number(R.every)||2)===n?'active':''}" onclick="rpSet('every',${n})">${n} days</button>`).join('')}</div>
+      <input type="number" min="1" max="365" id="rpEvery" value="${Number(R.every)||2}" style="margin-top:8px" oninput="rpEdit.rule.every=Math.max(1,parseInt(this.value)||1)"></div>`;
+  } else {
+    body = `<div class="field"><label>Day of the month</label><input type="number" min="1" max="31" id="rpDom" value="${Number(R.dom)||Number((t.start||todayISO()).slice(8,10))}" oninput="rpEdit.rule.dom=Math.min(31,Math.max(1,parseInt(this.value)||1))"><div class="hint" style="margin-top:6px">Short months use their last day.</div></div>`;
+  }
+  openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Cancel</button><h2>${t.id ? 'Repeating task' : 'New repeating task'}</h2><button class="sheet-btn bold" onclick="rpSave()">Save</button></div>
+    <div class="sheet-body">
+      <div class="field"><label>Task</label><input type="text" id="rpTitle" value="${escapeHtml(t.title)}" placeholder="e.g. 🧺 Wash sheets" oninput="rpEdit.title=this.value"></div>
+      <div class="field"><label>Time</label><div style="display:flex;gap:8px"><input type="time" id="rpTime" value="${escapeHtml(t.time||'')}" style="flex:1" oninput="rpEdit.time=this.value"><button type="button" class="chip" onclick="rpEdit.time='';document.getElementById('rpTime').value=''">Any time</button></div></div>
+      <div class="field"><label>Note</label><textarea id="rpNote" style="min-height:60px" oninput="rpEdit.note=this.value">${escapeHtml(t.note||'')}</textarea></div>
+      <div class="field"><label>Repeats</label><div class="chip-row">${kindChip('week','Days of the week')}${kindChip('interval','Every few days')}${kindChip('monthly','Monthly')}</div></div>
+      ${body}
+      <div class="field"><label>Starts</label><input type="date" id="rpStart" value="${escapeHtml(t.start||todayISO())}" oninput="rpEdit.start=this.value"></div>
+      <div class="field"><label>Ends (optional)</label><div style="display:flex;gap:8px"><input type="date" id="rpEnd" value="${escapeHtml(t.end||'')}" style="flex:1" oninput="rpEdit.end=this.value"><button type="button" class="chip" onclick="rpEdit.end='';document.getElementById('rpEnd').value=''">Never</button></div></div>
+      <div class="hint" style="margin:0 4px 12px">${escapeHtml(rpRuleText(t))}. It shows in your routine on those days from ${t.start && t.start>todayISO() ? fmtDayDate(t.start) : 'today'} on. Delete or move one day's copy and only that day changes.</div>
+      <button type="button" class="btn-primary" onclick="rpSave()">Save</button>
+      ${t.id ? `<button type="button" class="btn-danger" style="width:100%;margin-top:10px" onclick="rpDelete('${t.id}')">Delete repeating task</button>` : ''}
+    </div>`);
+}
+function rpKeepInputs(){ const g = id=>document.getElementById(id); if(!rpEdit) return; if(g('rpTitle')) rpEdit.title = g('rpTitle').value; if(g('rpNote')) rpEdit.note = g('rpNote').value; if(g('rpTime')) rpEdit.time = g('rpTime').value; if(g('rpStart')) rpEdit.start = g('rpStart').value; if(g('rpEnd')) rpEdit.end = g('rpEnd').value; }
+function rpSet(k, v){ rpKeepInputs(); rpEdit.rule[k] = v; if(k==='kind'){ rpEdit.rule.every = v==='interval' ? 2 : 1; if(v==='monthly') rpEdit.rule.dom = Number((rpEdit.start||todayISO()).slice(8,10)); } rpRender(); }
+function rpDay(d){ rpKeepInputs(); const a = new Set(rpEdit.rule.days||[]); a.has(d) ? a.delete(d) : a.add(d); rpEdit.rule.days = Array.from(a); rpRender(); }
+function rpDays(a){ rpKeepInputs(); rpEdit.rule.days = a.slice(); rpRender(); }
+function rpSave(){
+  rpKeepInputs();
+  const t = rpEdit; if(!t) return;
+  t.title = String(t.title||'').trim();
+  if(!t.title){ toast('Give the task a name'); return; }
+  if(!t.start) t.start = todayISO();
+  if(t.end && t.end < t.start){ toast('The end date is before the start'); return; }
+  if(t.rule.kind==='week' && Array.isArray(t.rule.days) && t.rule.days.length===7) t.rule.days = [];
+  const L = rpList();
+  if(t.id){ const i = L.findIndex(x=>x.id===t.id); if(i>=0) L[i] = t; else L.push(t); }
+  else { t.id = uid(); L.push(t); }
+  rpEdit = null;
+  saveState(); rpApply(); closeSheet(); render(); try{ renderFocus(); }catch(e){}
+  toast('Repeating task saved');
+}
+function rpDelete(id){
+  state.repeatTasks = rpList().filter(x=>x.id!==id);
+  rpEdit = null; saveState(); rpApply(); closeSheet(); render(); try{ renderFocus(); }catch(e){}
+  toast('Repeating task deleted. Ticked days are kept');
+}
+(function(){
+  const hook = ()=>{
+    if(typeof render==='function' && !render.__rp){ const o = render; render = function(){ try{ rpApply(); }catch(e){} return o.apply(this, arguments); }; render.__rp = true; }
+    if(typeof removeTaskFromDay==='function' && !removeTaskFromDay.__rp){ const o = removeTaskFromDay; removeTaskFromDay = function(f,d,i){ rpTombstone(f,d,i); return o.apply(this, arguments); }; removeTaskFromDay.__rp = true; }
+    if(typeof moveItemToNextDay==='function' && !moveItemToNextDay.__rp){ const o = moveItemToNextDay; moveItemToNextDay = function(f,d,i){ rpTombstone(f,d,i); return o.apply(this, arguments); }; moveItemToNextDay.__rp = true; }
+  };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', hook); else setTimeout(hook, 0);
+})();
+
 /* ============ INIT ============ */
 loadState().then(()=>{
   applyAppearance();
@@ -18169,6 +18408,31 @@ loadState().then(()=>{
 .ac-t.ac-x .ac-b{flex:1;width:auto;}
 .ac-t.ac-x .ac-s{display:block;}
 .ac-t.ac-x .act-ico{width:34px;height:34px;border-radius:11px;}
+/* Routine tiles: what's inside */
+.rt.rt-has-in{grid-column:1/-1;}
+.rt-in{margin:0 12px 10px;padding-top:8px;border-top:1px solid var(--sep);cursor:pointer;display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:1.35;}
+.rt-in-n{color:var(--text-2);white-space:pre-wrap;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;}
+.rt-in-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;}
+.rt-in-l li{display:flex;gap:8px;align-items:flex-start;color:var(--text);}
+.rt-in-l li i{flex:none;width:12px;height:12px;margin-top:3px;border-radius:50%;border:1.5px solid var(--text-3);}
+.rt-in-l li.on{color:var(--text-3);text-decoration:line-through;}
+.rt-in-l li.on i{background:var(--green);border-color:var(--green);}
+.rt-in-l li.log i{border-radius:3px;border-style:dashed;}
+.rt-in-l li.more{color:var(--text-3);padding-left:20px;}
+[data-design="simple"] .rs .rt-grid .rt-in{margin:-4px 14px 12px 56px;padding-top:0;border-top:0;}
+/* Hold: the task expands into a clear tile, everything else frosted */
+.pk-bd{background:rgba(0,0,0,.30);-webkit-backdrop-filter:blur(18px) saturate(160%);backdrop-filter:blur(18px) saturate(160%);transition:opacity .2s ease;}
+.pk-bd.closing{opacity:0;pointer-events:none;}
+.pk-bd.closing .pk{transform:scale(.96);transition:transform .2s ease;}
+.pk{background:color-mix(in srgb,var(--card) 68%,transparent);-webkit-backdrop-filter:blur(26px) saturate(180%);backdrop-filter:blur(26px) saturate(180%);
+  border:1px solid rgba(255,255,255,.22);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 75%,transparent),0 0 28px 6px color-mix(in srgb,var(--accent) 38%,transparent),0 26px 70px rgba(0,0,0,.45);}
+.pk-n{background:color-mix(in srgb,var(--fill) 80%,transparent);}
+.pk-src{opacity:.12 !important;transition:opacity .18s ease;}
+/* Today's List: copy all / paste */
+.tl-cp{display:flex;align-items:center;gap:8px;}
+.tl-cpb{border:0;border-radius:999px;padding:6px 12px;background:var(--fill);color:var(--text);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
+.tl-cpb.pri{background:var(--accent);color:var(--accent-ink);}
 </style>
 
 
