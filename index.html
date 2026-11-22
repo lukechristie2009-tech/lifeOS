@@ -5473,8 +5473,8 @@ function routineTile(it, lifeFocusId, ecomFocusId, date, isNext){
   const inside = (!bundleMode && !open) ? rtInsideHtml(it, date) : '';
   const cls = ['rt', bundleable?'selectable':'', bSel?'selected':'', it.done?'done':'', blocked?'pending':'', (isNext&&!it.done)?'next':'', open?'open':'', inside?'rt-has-in':''].filter(Boolean).join(' ');
   const checkLabel = it.done ? 'Completed. Tap to undo' : isChecklist ? 'Open checklist' : blocked ? 'Requirements not met yet' : 'Mark complete';
-  return `<div class="${cls}" data-key="${escapeHtml(key)}" ${swipe} ${editable&&!bundleMode?`data-hold="peekTask(${c.a})"`:''}>
-    <div class="rt-face" ${bundleMode ? (bundleable?`onclick="toggleBundleSel('${bKey}')"`:'') : (editable?`onclick="${c.drop}"`:'')}>
+  return `<div class="${cls}" data-key="${escapeHtml(key)}" ${swipe} ${editable&&!bundleMode?`data-hold="${rtOpenMode()==='arrow' ? `cpMenu('rt',${c.a})` : `peekTask(${c.a})`}"`:''}>
+    <div class="rt-face" ${bundleMode ? (bundleable?`onclick="toggleBundleSel('${bKey}')"`:'') : (editable && rtOpenMode()!=='hold' ?`onclick="${c.drop}"`:'')}>
       <div class="rt-l1">
         <span class="rt-title">${escapeHtml(plainTitle(it.title))}</span>
         <button class="rt-check ${it.done?'on':''} ${showRing?'has-req':''}" ${editable?`onclick="event.stopPropagation();${c.done}"`:'disabled'} aria-label="${checkLabel}">${it.done?CHECK_SVG:(showRing?miniRing(frac):'')}</button>
@@ -5484,7 +5484,7 @@ function routineTile(it, lifeFocusId, ecomFocusId, date, isNext){
         ${timeLabel?`<span class="rt-time">${escapeHtml(timeLabel)}</span>`:''}
         <span class="rt-sub">${escapeHtml(sub)}</span>
         ${hasNote||merged ? `<span class="rt-flags" aria-label="${[hasNote?'Has a note':'', merged?merged+' merged':''].filter(Boolean).join(', ')}">${hasNote?'<i class="f-note"></i>':''}${merged?`<b>+${merged}</b>`:''}</span>`:''}
-        ${editable?`<button class="rt-drop" type="button" aria-expanded="${open}" aria-label="Show details for ${escapeHtml(plainTitle(it.title))}" onclick="event.stopPropagation();${c.drop}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>`:''}
+        ${editable && rtOpenMode()!=='hold'?`<button class="rt-drop" type="button" aria-expanded="${open}" aria-label="Show details for ${escapeHtml(plainTitle(it.title))}" onclick="event.stopPropagation();${c.drop}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>`:''}
       </div>
     </div>
     ${inside}
@@ -14290,7 +14290,7 @@ function peekTask(focusId, date, itemId){
         <button type="button" onclick="pkClose();cpCopy('rt',${a})">Copy</button>
         <button type="button" onclick="pkClose();photoTap('${pk}','${safeT}')">${photoHas(pk) ? 'Photo' : 'Add photo'}</button>
         <button type="button" class="pri" onclick="pkClose();openTaskEdit(${a})">Edit</button>
-      </div>`);
+      </div>${rtOpenMode()==='hold' && !openTiles.has(tileKey(date, itemId)) ? `<div class="pk-a" style="margin-top:8px"><button type="button" onclick="pkClose();toggleTile('${date}','${itemId}')">Open task to log or tick steps</button></div>` : ''}`);
 }
 /* tick-off rows: read-only look, the tick-off stays open underneath */
 function peekCi(i){
@@ -18130,8 +18130,21 @@ function acPack(grid){
 /* ---------- 1. Routine tiles show what's inside ---------- */
 function rtInsideOn(){ return !!(state && state.rtShowInside); }
 function rtToggleInside(){ state.rtShowInside = !rtInsideOn(); saveState(); render(); toast(rtInsideOn() ? 'Routine tasks show what\'s inside' : 'Hold a task to see what\'s inside'); }
+/* How a routine task opens on the Dashboard:
+   'both'  – dropdown arrow / tap opens it, hold shows its contents (default)
+   'arrow' – dropdown arrow / tap only; hold gives the copy/photo/edit menu
+   'hold'  – no arrow; hold shows the contents, with a button to open the task */
+function rtOpenMode(){ const m = state && state.ui && state.ui.rtOpen; return m==='arrow' || m==='hold' ? m : 'both'; }
+function rtSetOpenMode(m){ state.ui = state.ui || {}; state.ui.rtOpen = m; saveState(); render(); toast(m==='hold' ? 'Hold a task to see what\'s in it' : m==='arrow' ? 'Tap the arrow to open a task' : 'Arrow opens a task, hold shows what\'s in it'); }
+function rtOpenModeHtml(){
+  const opt = (m, t, sub)=>`<div class="row" style="cursor:pointer" onclick="rtSetOpenMode('${m}')"><div class="row-text"><div class="row-title">${t}</div><div class="row-sub">${sub}</div></div><div style="color:var(--accent);font-weight:700;font-size:18px;width:22px;text-align:center">${rtOpenMode()===m?'✓':''}</div></div>`;
+  return opt('arrow','Dropdown arrow','Tap a task or its arrow to open it. Hold for Copy, Photo and Edit')
+    + opt('hold','Hold','No arrows. Hold a task to see what\'s in it')
+    + opt('both','Both','Arrow opens the task, hold shows what\'s in it');
+}
 function rtInsideSettingHtml(){
-  return `<div class="section-label">Routine design</div><div class="card">
+  return `<div class="section-label">Open routine tasks with</div><div class="card">${rtOpenModeHtml()}</div>
+  <div class="section-label">Routine design</div><div class="card">
     ${setToggleRow('Show what\'s in each task', rtInsideOn() ? 'On. Each routine task shows its note, steps and what still needs logging right on the Dashboard. Hold a task to see it bigger' : 'Off. Tasks show just their name. Hold one to see what\'s inside', rtInsideOn(), 'rtToggleInside()')}
   </div>`;
 }
@@ -18148,7 +18161,7 @@ function rtInsideHtml(it, date){
     }
     if(!note && !steps.length) return '';
     const MAX = 6, more = steps.length - MAX;
-    return `<div class="rt-in" onclick="const f=this.parentElement.querySelector('.rt-face');if(f)f.click()">${note ? `<div class="rt-in-n">${escapeHtml(note)}</div>` : ''}${steps.length ? `<ul class="rt-in-l">${steps.slice(0,MAX).map(x=>`<li class="${x.d?'on':''} ${x.log?'log':''}"><i></i><span>${escapeHtml(plainTitle(x.t))}</span></li>`).join('')}${more>0 ? `<li class="more">+${more} more</li>` : ''}</ul>` : ''}</div>`;
+    return `<div class="rt-in" ${rtOpenMode()==='hold' ? '' : `onclick="const f=this.parentElement.querySelector('.rt-face');if(f)f.click()"`}>${note ? `<div class="rt-in-n">${escapeHtml(note)}</div>` : ''}${steps.length ? `<ul class="rt-in-l">${steps.slice(0,MAX).map(x=>`<li class="${x.d?'on':''} ${x.log?'log':''}"><i></i><span>${escapeHtml(plainTitle(x.t))}</span></li>`).join('')}${more>0 ? `<li class="more">+${more} more</li>` : ''}</ul>` : ''}</div>`;
   }catch(e){ console.error(e); return ''; }
 }
 
