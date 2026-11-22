@@ -3889,10 +3889,12 @@ function scanForMissedNotifications(){
     else state.missedNotified.top3.push(item.notifyKey);
   });
   saveState();
+  if(state.missedAlertsOff) return; // switched off in Settings › Briefing & alerts: still marked, never popped
   missedNotificationQueue.push(...newlyFound);
 }
 
 function maybeShowNextMissedNotification(){
+  if(state && state.missedAlertsOff){ missedNotificationQueue.length = 0; return; }
   if(!missedNotificationQueue.length) return;
   const backdrop = document.getElementById('sheetBackdrop');
   if(backdrop && backdrop.classList.contains('open')) return; // don't interrupt an open sheet
@@ -5697,6 +5699,7 @@ function renderDashboard(){
         <div class="sh-stats">${(()=>{ const rs = reviewStreakDays(); const risk = hour>=18 && !todayReview; return risk && rs ? `<span class="risk" onclick="openDailyReviewEditor('${_today}')">Review tonight to keep your ${rs}-day streak</span>` : `<span>${rs}-day review streak</span>`; })()}<span>${perfectStreak} perfect day${perfectStreak===1?'':'s'}</span><span>${week.pct}% this week</span></div>
       </div>
     </section>
+    ${bfTodayHtml()}
     ${gmCardHtml()}
     ${photoStripHtml()}
     ${focusStripHtml2(lifeFocus, ecomFocus)}
@@ -5723,6 +5726,7 @@ function renderDashboard(){
     <div class="dz-mf">${renderMainFocusCard()}</div>
 
     ${ciButtonHtml()}
+    ${bfTomorrowHtml()}
     ${focusMode ? '' : `
     <div class="dz-sec-head">
       <h2>Routine</h2>
@@ -9705,6 +9709,7 @@ function renderSettingsPanel(){
 
     `;
   S.tickoff = ciSettingsHtml();
+  S.alerts = bfSettingsHtml();
   S.display = `
     <div class="card" style="margin-top:8px"><div class="row" onclick="toggleSimpleDesign()"><div class="row-text"><div class="row-title">Super Simple mode</div><div class="row-sub">${isSimpleDesign() ? 'On. Tap to go back to your previous design' : 'Off. Tap for a clean, colourful, one-column look'}</div></div><div class="chevron">›</div></div></div>
     ${renderDesignPicker()}
@@ -9774,6 +9779,7 @@ function openEditRoutineItem(id){
       ${routineRepeatFieldHtml('rtEdit', t.repeatDays)}
       ${templateRuleNote(t)? `<div class="hint" style="margin:-4px 0 12px">Built-in rule: ${templateRuleNote(t)}. The days you pick above narrow it further.</div>`:''}
       ${t.locked==='last'?'':`<div class="btn-pair" style="margin-bottom:12px"><button type="button" class="btn-secondary" onclick="moveRoutineTemplateItem('${id}',-1);openEditRoutineItem('${id}')">Move up</button><button type="button" class="btn-secondary" onclick="moveRoutineTemplateItem('${id}',1);openEditRoutineItem('${id}')">Move down</button></div>`}
+      <div class="card" style="margin-bottom:12px">${mjToggleRowHtml('rtMajor', !!t.major, 'Every day this task is in your routine, LifeOS reminds you about it the first time you open the app')}</div>
       <div class="row" style="padding:0 0 16px">
         <div class="row-text row-title">Show in Routine</div>
         <button class="toggle ${t.hidden?'':'on'}" id="rtHiddenToggle" onclick="this.classList.toggle('on')"><div class="knob"></div></button>
@@ -9790,6 +9796,7 @@ function saveRoutineItem(id){
   if(/^\d{1,2}:\d{2}$/.test(val)){ t.time=val; t.displayText=''; } else { t.time=''; t.displayText=val; }
   t.note = document.getElementById('rtNote').value.trim();
   t.hidden = !document.getElementById('rtHiddenToggle').classList.contains('on');
+  { const mt = document.getElementById('rtMajor'); if(mt){ if(mt.classList.contains('on')) t.major = true; else delete t.major; } }
   const rd = readRoutineRepeat('rtEdit');
   if(rd) t.repeatDays = rd; else delete t.repeatDays;
   saveState(); closeSheet(); renderFocus(); renderSettings(); render(); toast('Saved');
@@ -11634,6 +11641,7 @@ function openTaskEdit(focusId, date, itemId){
       <div class="field"><label>Time</label><div style="display:flex;gap:8px"><input type="time" id="teTime" value="${escapeHtml(timeVal)}" style="flex:1"><button type="button" class="chip" onclick="document.getElementById('teTime').value=''">No time</button></div></div>
       <div class="field"><label>Label when there's no time (optional)</label><input type="text" id="teLabel" value="${escapeHtml(timeVal?'':(it.displayText||''))}" placeholder="e.g. After school"></div>
       <div class="field"><label>Note</label><textarea id="teNote" style="min-height:70px">${escapeHtml(it.note||'')}</textarea></div>
+      <div class="card" style="margin-bottom:12px">${mjToggleRowHtml('teMajor', mjIsMajor(it), 'Just for this day. The first time you open LifeOS that day, it reminds you about this task')}</div>
       <div class="hint" style="margin:0 0 12px">Changes here are for ${escapeHtml(fmtDayDate(date))} only.</div>
       <div class="card">
         ${it.type==='checklist'?'':`<div class="row" onclick="openReqEditor('${escapeHtml(it.refId||'')}')"><div class="row-text"><div class="row-title">Requirements</div><div class="row-sub">${(()=>{const L=taskReqList(it.refId||'');return L.length? L.length+' set'+(isStrictTask(it.refId)?' · locked until done':'') : 'None yet';})()}</div></div><div class="chevron">›</div></div>`}
@@ -11660,6 +11668,7 @@ function saveTaskEdit(focusId, date, itemId){
   const oldTime = it.time;
   if(t){ it.time = t; it.displayText = ''; } else { it.time = ''; it.displayText = label; }
   it.note = document.getElementById('teNote').value;
+  mjSaveDay(it, document.getElementById('teMajor'));
   if(it.time && it.time!==oldTime){ loc.day.items.splice(loc.idx,1); insertItemByTime(loc.day, it); }
   saveState(); closeSheet(); render(); undoToast('Task updated');
 }
@@ -14029,7 +14038,7 @@ function ciRenderSheet(){
       return `<div class="row ci-row ci-head" data-hold="peekCi(${i})"><div class="row-text"><div class="row-title ${it.done?'done':''}">${escapeHtml(plainTitle(it.title||''))}</div><div class="row-sub">${escapeHtml([when, it.checklist.filter(c=>c.done).length+' of '+it.checklist.length].filter(Boolean).join(' · '))}</div></div></div>`
         + it.checklist.map(c=>`<div class="row ci-row ci-sub" onclick="toggleChecklistChild('${e.focusId}','${s.date}','${it.id}','${c.id}')"><div class="checkbox ${c.done?'checked':''}">${c.done?'✓':''}</div><div class="row-text"><div class="row-title ${c.done?'done':''}">${escapeHtml(plainTitle(c.title||c.text||''))}</div></div></div>`).join('');
     }
-    return row(!!it.done, plainTitle(it.title||''), ciLogSub(it, s.date, when), `ciTickRoutine(${i})`, photoBtnHtml(s.date, it.refId, it.title), `peekCi(${i})`) + ciLogHtml(i, it, s.date);
+    return row(!!it.done, plainTitle(it.title||''), ciLogSub(it, s.date, when), `ciTickRoutine(${i})`, photoBtnHtml(s.date, it.refId, it.title), `peekCi(${i})`) + ciInsideHtml(it, s.date) + ciLogHtml(i, it, s.date);
   };
   const sections = [
     ['routine', s.win==='a' ? 'Routine · up to '+fmtClockTime(T.a) : s.win==='b' ? 'Routine · from '+fmtClockTime(T.a) : 'Routine'],
@@ -14050,18 +14059,19 @@ function ciRenderSheet(){
         const moved = r && !done && r.date > s.date;
         const sub = moved ? 'Moved to tomorrow' : late ? 'Overdue · '+fmtDM(r.date) : (r && r.time ? fmtClockTime(r.time) : '');
         if(moved){ return `<div class="row ci-row" style="opacity:.55"><div class="checkbox"></div><div class="row-text"><div class="row-title">${escapeHtml(e.title||'')}</div><div class="row-sub">${escapeHtml(sub)}</div></div></div>`; }
-        return row(done, (r && r.title) || e.title || '', sub, `ciTickReminder(${i})`, done ? '' : `<button type="button" class="ci-later" onclick="event.stopPropagation();snoozeReminder('${e.id}')">Tomorrow</button>`, `peekCi(${i})`);
+        return row(done, (r && r.title) || e.title || '', sub, `ciTickReminder(${i})`, done ? '' : `<button type="button" class="ci-later" onclick="event.stopPropagation();snoozeReminder('${e.id}')">Tomorrow</button>`, `peekCi(${i})`) + ciNoteInsideHtml(r && r.notes);
       }
       const l = (state.todaysLists||{})[e.date], x = l && l.items.find(y=>y.id===e.id);
-      return row(!x || !!x.done, (x && x.title) || e.title || '', '', `toggleTlItemDone('${e.date}','${e.id}')`, '', `peekCi(${i})`);
+      return row(!x || !!x.done, (x && x.title) || e.title || '', '', `toggleTlItemDone('${e.date}','${e.id}')`, '', `peekCi(${i})`) + ciNoteInsideHtml(x && x.note);
     }).join('') + `</div>`;
   });
   if(!s.entries.length) body = `<div class="ci-empty"><b>Nothing to tick off.</b><span>Everything for this part of the day is already done.</span></div>`;
   const head = s.win==='b' ? 'Evening tick-off' : 'Tick off';
-  const intro = !s.entries.length ? '' : `<p class="ci-intro">Tap what you've done. Leave what you haven't. Hold a task to see what's in it.</p>`;
+  const intro = !s.entries.length ? '' : `<p class="ci-intro">Tap what you've done. Leave what you haven't. ${ciInsideOn() ? "Each task's note and steps show under it." : "Hold a task to see what's in it."}</p>`;
   openSheet(`<div class="ci-sheet">
     <div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>${head}</h2><button class="sheet-btn bold" onclick="ciFinish()">Finish</button></div>
     <div class="sheet-body">${intro}${body}
+      ${s.entries.length ? `<div class="card" style="margin-top:14px">${setToggleRow('Show what\'s in each task', ciInsideOn() ? 'Notes and steps show under every task' : 'Hidden. Hold a task to see what\'s in it', ciInsideOn(), 'ciToggleInside()')}</div>` : ''}
       ${s.entries.some(e=>e.k==='r') ? `<div class="card" style="margin-top:14px">${setToggleRow('Tick steps too', ciTickReqsOn() ? "Ticking a task also ticks its checklist steps and tick-box checks" : 'Only the task itself gets ticked', ciTickReqsOn(), 'ciToggleTickReqs()')}</div>` : ''}
       <button type="button" class="btn-primary" style="margin-top:16px" onclick="ciFinish()">${left ? 'Finish · '+left+' left for later' : 'Finish · all ticked'}</button>
     </div></div>`);
@@ -14456,6 +14466,7 @@ let settingsCat = null;
 const SETTINGS_CATS = [
   ['general','General','Day off, focus mode, profiles, quotes, reminder categories','⚙️'],
   ['tickoff','Tick-off','Times, what each tick-off shows, ticking steps too','✅'],
+  ['alerts','Briefing & alerts','Tomorrow\'s briefing, major task reminder, missed reminder pop-ups','🔔'],
   ['display','Display','Design, background, cards, layout and animations','🎨'],
   ['access','Accessibility','Reduce motion and readability','👁️'],
   ['routine','Routine & tasks','Task requirements and discipline streak','🔁'],
@@ -14589,6 +14600,7 @@ function ciSettingsHtml(){
     </div>
     <div class="section-label">Both</div><div class="card">
       ${setToggleRow('Tick each task\'s steps too', ciTickReqsOn() ? 'On. Ticking a task in a tick-off also ticks its checklist steps and tick-box checks (times, numbers and timers still need logging)' : 'Off. Ticking a task in a tick-off only ticks the task itself', ciTickReqsOn(), 'ciToggleTickReqs()')}
+      ${setToggleRow('Show what\'s in each task', ciInsideOn() ? 'On. Every task in a tick-off shows its note, steps and what still needs logging underneath it' : 'Off. Tasks show just their name. Hold one to see what\'s in it', ciInsideOn(), 'ciToggleInside()')}
       ${setToggleRow('Log meals and times in the tick-off', ciLogOn() ? 'On. Bulking meals and other meals get a calories box, wake-up and bed get a time box, and meal prep gets a note box, right inside the tick-off' : 'Off. Calories and times are only logged inside each task', ciLogOn(), 'ciToggleLog()')}
       <div class="row" style="cursor:pointer" onclick="openCiSkipSheet()"><div class="row-text"><div class="row-title">Choose which tasks show</div><div class="row-sub">${nSkip ? nSkip+' task'+(nSkip===1?'':'s')+' left out' : 'Every routine task shows'}</div></div><div class="chevron">›</div></div>
     </div>`;
@@ -14780,6 +14792,7 @@ function diUpdate(){
     const top = diSafeTop();
     el.style.setProperty('--di-top', Math.max(8, Math.round(top/2 - 18.5)) + 'px');
     el.style.setProperty('--di-c', diColor());
+    el.style.filter = diFilter();
     el.className = 'di di-' + st;
     el.innerHTML = diInnerHtml(st);
     const p = diInfo().pct;
@@ -14793,11 +14806,12 @@ function diSettingsHtml(){
   return `<div class="section-label">Dynamic Island</div><div class="card">
     <div class="row" style="flex-wrap:wrap">
       <div class="row-text" style="flex-basis:100%;margin-bottom:10px"><div class="row-title">Island design</div><div class="row-sub">${live ? 'Shows on this iPhone around the Dynamic Island' : 'Shows on an iPhone 14 Pro or newer when LifeOS is opened from the Home Screen. Preview below'}</div></div>
-      <div class="di-prev"><div class="di-prev-hw"></div><div class="di di-${st}" style="--di-c:${diColor()}">${st==='off' ? '' : diInnerHtml(st)}</div></div>
+      <div class="di-prev"><div class="di-prev-hw"></div><div class="di di-${st}" id="diPrevHalo" style="--di-c:${diColor()};filter:${diFilter()}">${st==='off' ? '' : diInnerHtml(st)}</div></div>
       <div class="chip-row" style="margin-top:12px">${DI_STYLES.map(x=>`<button type="button" class="chip ${st===x[0]?'active':''}" onclick="diSet('islandStyle','${x[0]}')">${x[1]}</button>`).join('')}</div>
     </div>
     ${st==='off' ? '' : `<div class="row" style="flex-wrap:wrap"><div class="row-text" style="flex-basis:100%;margin-bottom:8px"><div class="row-title">Colour</div><div class="row-sub">${st==='rainbow' ? 'Rainbow uses every colour' : st==='progress' ? 'Fills around the island as you tick today off' : st==='live' ? 'Left: today done. Right: when your next task is' : 'Brightens for a moment every time you tick something off'}</div></div>
-      <div class="chip-row">${DI_COLORS.map(x=>`<button type="button" class="chip ${c===x[0]?'active':''}" onclick="diSet('islandColor','${x[0]}')"><span class="di-sw" style="background:${x[0]==='accent'?'var(--accent)':x[0]==='white'?'#fff':x[0]}"></span>${x[1]}</button>`).join('')}</div></div>`}
+      <div class="chip-row">${DI_COLORS.map(x=>`<button type="button" class="chip ${c===x[0]?'active':''}" onclick="diSet('islandColor','${x[0]}')"><span class="di-sw" style="background:${x[0]==='accent'?'var(--accent)':x[0]==='white'?'#fff':x[0]}"></span>${x[1]}</button>`).join('')}</div></div>
+      ${diBrightRowHtml()}`}
   </div>`;
 }
 (function(){
@@ -17393,7 +17407,7 @@ function wkGoalsHtml(){
   return `
     <div class="section-label-row"><div class="section-label">Upgrade goals</div><button type="button" class="show-times-btn" onclick="wkEditGoal(null)">+ New</button></div>
     <div class="wk-card">${open.map(row).join('') || '<div class="wk-sub">No goals yet. Pick one below or tap + New. Lifts tick themselves off the moment you log the set.</div>'}</div>
-    ${sug.length ? `<div class="section-label">Suggested next upgrades</div><div class="wk-card">${sug.map((s,i)=>`<div class="wk-sug"><div class="wk-ex-b"><div class="wk-ex-n">${escapeHtml(s.ex)} ${wkFmtKg(s.kg)} kg × ${s.reps}</div><div class="wk-ex-s">${escapeHtml(s.why)}</div></div><button type="button" class="wk-mini acc" onclick="wkAddSuggested(${i})">+ Add</button></div>`).join('')}</div>` : ''}
+    ${sug.length ? `<div class="section-label">Suggested next upgrades</div><div class="wk-card">${sug.map((s,i)=>`<div class="wk-sug"><div class="wk-ex-b"><div class="wk-ex-n">${escapeHtml(s.type==='streak' ? s.n+' days in a row' : s.ex+' '+wkFmtKg(s.kg)+' kg × '+s.reps)}</div><div class="wk-ex-s">${escapeHtml(s.why)}</div></div><button type="button" class="wk-mini acc" onclick="wkAddSuggested(${i})">+ Add</button></div>`).join('')}</div>` : ''}
     ${done.length ? `<div class="section-label">Achieved</div><div class="wk-card">${done.slice().sort((a,b)=>b.doneAt-a.doneAt).map(row).join('')}</div>` : ''}`;
 }
 function wkGoalSuggestions(){
@@ -17708,7 +17722,7 @@ function wkStatsHtml(){
   const weeks = Array.from({length:WK}, (_,i)=>{ const st = addDaysISO(mon, -7*(WK-1-i)); let n = 0; for(let k=0;k<7;k++){ const ds = addDaysISO(st,k); if(ds<=t && wkTrained(ds)) n++; } return {st, n}; });
   const Wd = 320, H = 130, T = 16, B = 20, ph = H-T-B, slot = Wd/WK, bw = Math.min(18, slot-6);
   const bars = weeks.map((w,i)=>{ const h = Math.max(w.n?3:0, ph*w.n/7), bx = slot*i+(slot-bw)/2, by = T+ph-h, r = Math.min(4,h);
-    return `${h?`<path class="bar ${i===WK-1?'':'dim'}" d="M${f(bx)} ${f(by+h)}V${f(by+r)}q0 ${-r} ${r} ${-r}h${f(bw-2*r)}q${r} 0 ${r} ${r}V${f(by+h)}z"/>`:''}<text class="v" x="${f(bx+bw/2)}" y="${f(by-4)}" text-anchor="middle">${w.n}</text>${i%2===WK%2 || i===WK-1 ? `<text x="${f(bx+bw/2)}" y="${H-5}" text-anchor="middle">${i===WK-1?'Now':fmtDM(w.st)}</text>` : ''}`; }).join('');
+    return `${h?`<path class="bar ${i===WK-1?'':'dim'}" d="M${f(bx)} ${f(by+h)}V${f(by+r)}q0 ${-r} ${r} ${-r}h${f(bw-2*r)}q${r} 0 ${r} ${r}V${f(by+h)}z"/>`:''}<text class="v" x="${f(bx+bw/2)}" y="${f(by-4)}" text-anchor="middle">${w.n}</text>${i%2===(WK-1)%2 ? `<text x="${f(bx+bw/2)}" y="${H-5}" text-anchor="middle">${i===WK-1?'Now':fmtDM(w.st)}</text>` : ''}`; }).join('');
   /* weekday consistency, last 26 weeks */
   const dw = [1,2,3,4,5,6,0].map(dow=>{ let on = 0, n = 0; for(let i=0;i<WEEKS*7;i++){ const ds = addDaysISO(start, i); if(ds>t) break; if(ds<first || wkDow(ds)!==dow) continue; n++; if(wkTrained(ds)) on++; } return {dow, pct: n ? Math.round(on/n*100) : 0}; });
   const worst = dw.slice().sort((a,b)=>a.pct-b.pct)[0];
@@ -17832,6 +17846,273 @@ function ecomWrapInit(){
   }catch(e){ console.error('ecom wrap', e); }
 }
 
+/* ================================================================
+   22 Nov 2026 additions
+   1. Tick-off: setting to show each task's note and steps inline
+   2. Dynamic Island: brightness slider
+   3. Today's briefing: write it the night before, read it in the morning
+   4. Major tasks: reminder the first time you open the app that day
+   5. Switch for the "Missed reminder" pop-ups
+   6. Activities collage: no holes
+   ================================================================ */
+
+/* ---------- 1. Tick-off contents ---------- */
+function ciInsideOn(){ return !!(state && state.ciShowInside); }
+function ciToggleInside(){
+  state.ciShowInside = !ciInsideOn(); saveState(); render();
+  if(ciSession && document.querySelector('.ci-sheet')) ciRenderSheet();
+  toast(ciInsideOn() ? 'Tick-offs show what\'s in each task' : 'Hold a task in the tick-off to see what\'s in it');
+}
+function ciInsideHtml(it, date){
+  if(!ciInsideOn() || !it) return '';
+  let h = ''; try{ h = pkTaskBody(it, date); }catch(e){ return ''; }
+  if(!h || h.indexOf('<div class="pk-e">Nothing else')===0) return '';
+  return `<div class="ci-in">${h}</div>`;
+}
+function ciNoteInsideHtml(note){
+  if(!ciInsideOn() || !note || !String(note).trim()) return '';
+  return `<div class="ci-in"><div class="pk-n">${escapeHtml(String(note).trim())}</div></div>`;
+}
+
+/* ---------- 2. Dynamic Island brightness ---------- */
+function diBright(){ const b = Number(state && state.islandBright); return b>0 ? Math.max(.3, Math.min(2, b)) : 1; }
+function diFilter(){
+  const b = diBright();
+  if(Math.abs(b-1) < .01) return 'none';
+  if(b < 1) return 'brightness('+b+') opacity('+(0.35 + b*0.65).toFixed(2)+')';
+  return 'brightness('+b+') saturate('+(1+(b-1)*.3).toFixed(2)+') drop-shadow(0 0 '+Math.round((b-1)*12)+'px var(--di-c))';
+}
+function diBrightRowHtml(){
+  const v = Math.round(diBright()*100);
+  return `<div class="row" style="flex-wrap:wrap" onclick="event.stopPropagation()"><div class="row-text" style="flex-basis:100%;margin-bottom:6px"><div class="row-title">Brightness</div><div class="row-sub">How strong the glow around the island is</div></div>
+    <div class="di-br"><span style="font-size:14px;opacity:.6">☀︎</span><input type="range" min="30" max="200" step="5" value="${v}" oninput="diBrightLive(this.value)" onchange="diBrightSave(this.value)" aria-label="Island brightness"><span style="font-size:19px">☀︎</span><b id="diBrVal">${v}%</b></div>
+    <button type="button" class="chip" style="margin-top:8px" onclick="diBrightSave(100);renderSettings()">Reset to 100%</button></div>`;
+}
+function diBrightLive(v){
+  state.islandBright = Number(v)/100;
+  const f = diFilter();
+  const h = document.getElementById('diHalo'); if(h) h.style.filter = f;
+  const p = document.getElementById('diPrevHalo'); if(p) p.style.filter = f;
+  const l = document.getElementById('diBrVal'); if(l) l.textContent = Math.round(v)+'%';
+}
+function diBrightSave(v){ diBrightLive(v); saveState(); }
+
+/* ---------- 3. Today's briefing ---------- */
+function bfOn(){ return !(state && state.briefingOff); }
+function bfMap(){ if(!state.briefings || typeof state.briefings!=='object') state.briefings = {}; return state.briefings; }
+/* after midnight but before 4am you're still writing for "tomorrow morning", i.e. today */
+function bfTarget(){ return new Date().getHours() < 4 ? todayISO() : addDaysISO(todayISO(), 1); }
+function bfText(ds){ const t = (state && state.briefings || {})[ds]; return t && String(t).trim() ? String(t).trim() : ''; }
+function bfTodayHtml(){
+  try{
+    if(!bfOn()) return '';
+    const t = todayISO(), txt = bfText(t);
+    if(!txt || (state.bfHidden||{})[t]) return '';
+    return `<section class="bf-card" data-hold="bfOpenWriter('${t}')">
+      <div class="bf-k">☀️ Today's briefing <small>from last night</small><button type="button" class="bf-x" aria-label="Hide for today" onclick="event.stopPropagation();bfHide()">×</button></div>
+      <div class="bf-t">${escapeHtml(txt)}</div></section>`;
+  }catch(e){ console.error(e); return ''; }
+}
+function bfTomorrowHtml(){
+  try{
+    if(!bfOn()) return '';
+    const h = new Date().getHours();
+    if(h >= 4 && h < 17) return '';
+    const ds = bfTarget(), txt = bfText(ds);
+    return `<button type="button" class="bf-tmr" onclick="bfOpenWriter('${ds}')">
+      <span class="bf-i">🌙</span>
+      <span class="bf-tx"><b>${txt ? 'Tomorrow\'s briefing ✓' : 'Write tomorrow\'s briefing'}</b><small>${txt ? escapeHtml(txt.replace(/\s+/g,' ')) : 'A note to yourself for when you wake up'}</small></span>
+      <span class="bf-go">›</span></button>`;
+  }catch(e){ console.error(e); return ''; }
+}
+function bfHide(){ if(!state.bfHidden || typeof state.bfHidden!=='object') state.bfHidden = {}; state.bfHidden = {[todayISO()]: true}; saveState(); render(); undoToastSafe('Briefing hidden for today', ()=>{ state.bfHidden = {}; saveState(); render(); }); }
+function undoToastSafe(msg, undo){ toast(msg); }
+function bfOpenWriter(ds){
+  ds = ds || bfTarget();
+  const isToday = ds===todayISO();
+  const label = isToday ? "Today's briefing" : ds===addDaysISO(todayISO(),1) ? "Tomorrow's briefing" : 'Briefing for '+fmtDayDate(ds);
+  const add = (t)=>`<button type="button" class="chip" onclick="bfAddLine('${t.replace(/'/g,"\\'")}')">${escapeHtml(t)}</button>`;
+  openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Cancel</button><h2>${escapeHtml(label)}</h2><button class="sheet-btn bold" onclick="bfSave('${ds}')">Save</button></div>
+    <div class="sheet-body">
+      <p style="margin:0 4px 10px;color:var(--text-3);font-size:14px">${isToday ? 'Shows at the top of your Dashboard today.' : 'Shows at the top of your Dashboard when you open LifeOS '+(ds===addDaysISO(todayISO(),1)?'tomorrow':'on '+fmtDayDate(ds))+'.'} What do you need to know first thing?</p>
+      <textarea id="bfText" class="bf-ta" placeholder="e.g. Big day. Gym before school, finish the English essay, bring the PE gear.">${escapeHtml(bfText(ds))}</textarea>
+      <div class="bf-chips">${add('🎯 Main focus: ')}${add('⚠️ Don\'t forget: ')}${add('🏋️ Gym: ')}${add('📚 School: ')}${add('🤑 Ecommerce: ')}</div>
+      <button type="button" class="btn-primary" style="margin-top:12px" onclick="bfSave('${ds}')">Save briefing</button>
+      ${bfText(ds) ? `<button type="button" class="btn-danger" style="width:100%;margin-top:10px" onclick="bfClear('${ds}')">Delete briefing</button>` : ''}
+    </div>`);
+  setTimeout(()=>{ const t = document.getElementById('bfText'); if(t && !t.value) t.focus(); }, 250);
+}
+function bfAddLine(t){
+  const el = document.getElementById('bfText'); if(!el) return;
+  el.value = (el.value && !/\n$/.test(el.value) ? el.value+'\n' : el.value) + t;
+  el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){}
+}
+function bfSave(ds){
+  const el = document.getElementById('bfText'); if(!el) return;
+  const m = bfMap(), v = el.value.trim();
+  if(v) m[ds] = v; else delete m[ds];
+  /* keep the store small: drop briefings older than two weeks */
+  const cut = addDaysISO(todayISO(), -14); Object.keys(m).forEach(k=>{ if(k < cut) delete m[k]; });
+  if(ds===todayISO() && state.bfHidden) delete state.bfHidden[ds];
+  saveState(); closeSheet(); render();
+  toast(v ? (ds===todayISO() ? "Today's briefing saved" : "Saved. You'll see it when you open LifeOS "+(ds===addDaysISO(todayISO(),1)?'tomorrow':'on '+fmtDayDate(ds))) : 'Briefing cleared');
+}
+function bfClear(ds){ delete bfMap()[ds]; saveState(); closeSheet(); render(); toast('Briefing deleted'); }
+function bfToggle(){ state.briefingOff = !state.briefingOff; saveState(); render(); toast(bfOn() ? "Today's briefing on" : "Today's briefing off"); }
+
+/* ---------- 4. Major tasks ---------- */
+function mjTmplMajor(it){ try{ const t = it && it.refId ? activeRoutine().find(x=>x.id===it.refId) : null; return !!(t && t.major); }catch(e){ return false; } }
+function mjIsMajor(it){ if(!it) return false; if(it.major===true) return true; if(it.major===false) return false; return mjTmplMajor(it); }
+function mjToggleRowHtml(id, on, sub){
+  return `<div class="row" style="cursor:pointer" onclick="document.getElementById('${id}').classList.toggle('on')"><div class="row-text"><div class="row-title">⭐ Major task</div><div class="row-sub">${escapeHtml(sub)}</div></div><button type="button" class="toggle ${on?'on':''}" id="${id}" onclick="event.stopPropagation();this.classList.toggle('on')" aria-label="Major task"><div class="knob"></div></button></div>`;
+}
+function mjSaveDay(it, el){
+  if(!it || !el) return;
+  const on = el.classList.contains('on');
+  if(on===mjTmplMajor(it)) delete it.major; else it.major = on;
+}
+function mjRemindOn(){ return !(state && state.majorRemindOff); }
+function mjToday(){
+  try{ return getTodayRoutineEntries().filter(e=>e.item && !e.item.done && mjIsMajor(e.item)); }catch(e){ return []; }
+}
+let mjTries = 0;
+function mjMaybeShow(){
+  try{
+    if(!state || !mjRemindOn() || document.hidden) return;
+    if(typeof activeDayOff==='function' && activeDayOff()) return;
+    const t = todayISO();
+    if(state.majorShown===t) return;
+    const list = mjToday();
+    if(!list.length) return;
+    /* never on top of something else: wait for the sign-in box, missed-reminder pop-up or a sheet to close */
+    const busy = document.getElementById('missedAlertBackdrop') || document.getElementById('pkBd') || document.getElementById('uiDialog') || document.getElementById('mjBd')
+      || (document.getElementById('sheetBackdrop')||{classList:{contains:()=>false}}).classList.contains('open')
+      || document.querySelector('.ls-modal.open, .sync-modal.open, [data-sync-modal].open');
+    if(busy){ if(mjTries++ < 40) setTimeout(mjMaybeShow, 3000); return; }
+    mjTries = 0;
+    state.majorShown = t; saveState();
+    const rows = list.map(e=>{ const it = e.item; const when = it.time && /^\d/.test(it.time) ? fmtClockTime(it.time) : (it.displayText||''); return `<div class="mj-it"><span>⭐</span><b>${escapeHtml(plainTitle(it.title||''))}</b>${when?`<small>${escapeHtml(when)}</small>`:''}</div>`; }).join('');
+    const first = list[0];
+    document.body.insertAdjacentHTML('beforeend', `<div class="lifeos-alert-backdrop" id="mjBd"><div class="lifeos-alert-card">
+      <div class="lifeos-alert-title">${list.length===1 ? 'Major task today' : list.length+' major tasks today'}</div>
+      <div class="lifeos-alert-msg" style="margin-bottom:10px">Don't let ${list.length===1?'this one':'these'} slip.</div>
+      <div class="mj-list">${rows}</div>
+      <div class="lifeos-alert-btns">
+        <button type="button" class="lifeos-alert-btn primary" onclick="mjClose()">Got it</button>
+        ${first.focusId ? `<button type="button" class="lifeos-alert-btn" onclick="mjClose();peekTask('${first.focusId}','${t}','${first.item.id}')">See what's in ${list.length===1?'it':'the first one'}</button>` : ''}
+      </div></div></div>`);
+  }catch(e){ console.error('major task', e); }
+}
+function mjClose(){ const b = document.getElementById('mjBd'); if(b) b.remove(); }
+function mjToggleRemind(){ state.majorRemindOff = !state.majorRemindOff; saveState(); render(); }
+
+/* ---------- 5. Missed reminder pop-ups ---------- */
+function missedToggle(){
+  state.missedAlertsOff = !state.missedAlertsOff;
+  if(state.missedAlertsOff){ missedNotificationQueue.length = 0; const b = document.getElementById('missedAlertBackdrop'); if(b) b.remove(); }
+  saveState(); render();
+  toast(state.missedAlertsOff ? 'Missed reminder pop-ups off' : 'Missed reminder pop-ups on');
+}
+
+/* ---------- Settings › Briefing & alerts ---------- */
+function bfSettingsHtml(){
+  const tm = bfTarget(), tmTxt = bfText(tm), tdTxt = bfText(todayISO());
+  const nMajor = (()=>{ try{ return activeRoutine().filter(t=>t.major).length; }catch(e){ return 0; } })();
+  return `<div class="section-label">Today's briefing</div><div class="card">
+      ${setToggleRow("Today's briefing", bfOn() ? 'On. Write a note the night before and it sits at the top of your Dashboard in the morning. The write button shows on the Dashboard from 5pm' : 'Off. No briefing card and no write button on the Dashboard', bfOn(), 'bfToggle()')}
+      ${bfOn() ? `<div class="row" style="cursor:pointer" onclick="bfOpenWriter('${tm}')"><div class="row-text"><div class="row-title">${tm===todayISO()?"This morning's briefing":"Tomorrow's briefing"}</div><div class="row-sub">${tmTxt ? escapeHtml(tmTxt.replace(/\s+/g,' ').slice(0,80)) : 'Not written yet'}</div></div><div class="chevron">›</div></div>
+      ${tm!==todayISO() ? `<div class="row" style="cursor:pointer" onclick="bfOpenWriter('${todayISO()}')"><div class="row-text"><div class="row-title">Today's briefing</div><div class="row-sub">${tdTxt ? escapeHtml(tdTxt.replace(/\s+/g,' ').slice(0,80)) : 'None for today'}</div></div><div class="chevron">›</div></div>` : ''}` : ''}
+    </div>
+    <div class="section-label">Major tasks</div><div class="card">
+      ${setToggleRow('Major task reminder', mjRemindOn() ? 'On. The first time you open LifeOS each day it reminds you about your major tasks, then stays quiet for the rest of the day' : 'Off. Major tasks are not shown when you open the app', mjRemindOn(), 'mjToggleRemind()')}
+      <div class="row"><div class="row-text"><div class="row-sub">Make a task major: hold it, tap Edit, switch on ⭐ Major task (just that day), or switch it on in the routine template so it's major every day.${nMajor ? ' '+nMajor+' task'+(nMajor===1?' is':'s are')+' major in your current routine.' : ''}</div></div></div>
+    </div>
+    <div class="section-label">Pop-ups</div><div class="card">
+      ${setToggleRow('Missed reminder pop-ups', !state.missedAlertsOff ? 'On. When a reminder passes its date without being ticked, a pop-up asks you to move it, pick a date or dismiss it' : 'Off. Missed reminders stay in your lists and tick-offs as overdue, but nothing pops up', !state.missedAlertsOff, 'missedToggle()')}
+    </div>`;
+}
+
+/* ---------- 6. Activities collage: pack tiles so there are no holes ----------
+   Tiles go in your order, left to right. Any gap left at the end of a row
+   (because the next tile is too wide, or a tall tile takes the space) is
+   closed by stretching the tile beside it. Re-runs live while you drag. */
+function acPack(grid){
+  try{
+    if(!grid) grid = document.querySelector('#page-activities .ac-grid');
+    if(!grid) return;
+    const tiles = Array.from(grid.children).filter(el=>el.classList && el.classList.contains('ac-t'));
+    const COLS = 6, occ = [], cells = [];
+    const free = (r,c)=>!(occ[r] && occ[r][c]);
+    const take = (r,c,w,h,el)=>{ for(let y=r;y<r+h;y++){ occ[y] = occ[y] || []; for(let x=c;x<c+w;x++) occ[y][x] = el; } };
+    const sizeOf = el=>{
+      const k = el.classList;
+      if(k.contains('ac-hero')) return [6,2]; if(k.contains('ac-full')) return [6,1]; if(k.contains('ac-w')) return [4,1];
+      if(k.contains('ac-m')) return [3,1]; if(k.contains('ac-tall')) return [2,2]; return [2,1];
+    };
+    let r = 0, c = 0;
+    tiles.forEach(el=>{
+      el.classList.remove('ac-x');
+      if(el.classList.contains('dragging')) {} // still placed, so the others make room for it
+      const [w,h] = sizeOf(el);
+      for(let guard=0; guard<400; guard++){
+        if(c >= COLS){ r++; c = 0; continue; }
+        if(!free(r,c)){ c++; continue; }
+        let span = 0; while(c+span < COLS && free(r,c+span)) span++;
+        let fits = span >= w;
+        if(fits && h>1) for(let x=c;x<c+w;x++) if(!free(r+1,x)) fits = false;
+        if(fits){ take(r,c,w,h,el); cells.push({el,r,c,w,h}); c += w; break; }
+        c += span; // too narrow: leave the gap, it gets closed below
+      }
+    });
+    /* close the gaps */
+    const rows = occ.length;
+    for(let y=0;y<rows;y++){
+      for(let x=0;x<COLS;x++){
+        if(!free(y,x)) continue;
+        let e = x; while(e < COLS && free(y,e)) e++;
+        const len = e-x;
+        const L = x>0 ? cells.find(o=>o.el===occ[y][x-1]) : null;
+        const R = e<COLS ? cells.find(o=>o.el===occ[y][e]) : null;
+        const ok = o=>o && (o.h===1 || (o.r===y && (()=>{ for(let xx=x;xx<e;xx++) if(!free(y+1,xx)) return false; return true; })()));
+        let o = ok(L) ? L : ok(R) ? R : null;
+        if(o){ if(o===R) o.c = x; o.w += len; take(o.r, o===R ? x : x, len, o.h, o.el); }
+        x = e-1;
+      }
+    }
+    cells.forEach(o=>{
+      o.el.style.gridColumn = (o.c+1)+' / span '+o.w;
+      o.el.style.gridRow = (o.r+1)+' / span '+o.h;
+      const [w0] = sizeOf(o.el);
+      if(o.w >= 3 && w0 < 3 && !o.el.classList.contains('ac-hero')) o.el.classList.add('ac-x');
+    });
+  }catch(e){ console.error('acPack', e); }
+}
+(function(){
+  const hook = ()=>{
+    if(typeof renderActivities==='function' && !renderActivities.__ac){
+      const o = renderActivities;
+      renderActivities = function(){ const r = o.apply(this, arguments); acPack(); return r; };
+      renderActivities.__ac = true;
+    }
+    acPack();
+    /* while dragging, the tile is moved in the page; re-pack so the preview has no holes either */
+    try{
+      new MutationObserver(muts=>{ if(muts.some(m=>m.type==='childList' && m.target.classList && m.target.classList.contains('ac-grid') && m.addedNodes.length && !m.target.__packing)){ const g = muts[0].target; g.__packing = true; acPack(g); setTimeout(()=>{ g.__packing = false; }, 0); } })
+        .observe(document.getElementById('page-activities'), {childList:true, subtree:true});
+    }catch(e){}
+  };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', hook); else setTimeout(hook, 0);
+})();
+
+/* major task reminder: first open of the day, and whenever the app comes back to the front on a new day */
+(function(){
+  const go = ()=>setTimeout(mjMaybeShow, 1800);
+  const wait = ()=>{ if(typeof state!=='undefined' && state && Array.isArray(state.reminders)) go(); else setTimeout(wait, 500); };
+  wait();
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) go(); });
+  setInterval(()=>{ if(state && state.majorShown!==todayISO()) mjMaybeShow(); }, 60000);
+})();
+
 /* ============ INIT ============ */
 loadState().then(()=>{
   applyAppearance();
@@ -17844,4 +18125,51 @@ loadState().then(()=>{
   try{ LifeSync.init(); }catch(e){ console.error('sync init failed',e); }
 });
 </script>
+<style id="lifeos-nov22">
+/* Tick-off: task contents shown inline */
+.ci-in{padding:0 16px 12px 56px;margin-top:-6px;font-size:13.5px;}
+.ci-in .pk-n{font-size:13.5px;padding:8px 10px;margin:2px 0 6px;}
+.ci-in .pk-h{margin:6px 0 2px;font-size:11px;}
+.ci-in .pk-l li{font-size:13.5px;padding:4px 0;gap:8px;}
+.ci-in .pk-c{width:15px;height:15px;font-size:9px;}
+.ci-in .pk-e{display:none;}
+.ci-in + .row::before,.ci-in + .ci-log + .row::before{content:"";position:absolute;top:0;left:16px;right:0;height:1px;background:var(--sep);}
+/* Briefing cards */
+.bf-card{margin:12px var(--gap) 0;padding:14px 16px;border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow);position:relative;border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);}
+.bf-k{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent);}
+.bf-k small{font-weight:500;letter-spacing:0;text-transform:none;color:var(--text-3);font-size:12px;}
+.bf-x{margin-left:auto;background:none;border:0;color:var(--text-3);font-size:20px;line-height:1;padding:2px 6px;cursor:pointer;}
+.bf-t{white-space:pre-wrap;font-size:16px;line-height:1.45;color:var(--text);margin-top:8px;}
+.bf-tmr{display:flex;align-items:center;gap:12px;width:calc(100% - 2*var(--gap));margin:12px var(--gap) 0;padding:12px 14px;border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow);border:0;color:var(--text);font:inherit;text-align:left;cursor:pointer;}
+.bf-tmr .bf-i{flex:none;width:34px;height:34px;border-radius:11px;background:var(--accent-soft,var(--fill));display:flex;align-items:center;justify-content:center;font-size:17px;}
+.bf-tmr b{display:block;font-size:15px;font-weight:650;}
+.bf-tmr small{display:block;font-size:12.5px;color:var(--text-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bf-tmr .bf-tx{flex:1;min-width:0;}
+.bf-tmr .bf-go{color:var(--text-3);font-size:20px;}
+.bf-ta{width:100%;box-sizing:border-box;min-height:180px;border-radius:14px;border:1px solid var(--sep);background:var(--card);color:var(--text);font:inherit;font-size:16px;line-height:1.45;padding:12px 14px;resize:vertical;}
+.bf-chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px;}
+/* Major task pop-up */
+.mj-list{text-align:left;margin:4px 0 16px;display:flex;flex-direction:column;gap:6px;}
+.mj-it{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--card-2);}
+.mj-it b{flex:1;min-width:0;font-size:15px;}
+.mj-it small{color:var(--text-3);font-size:12.5px;white-space:nowrap;}
+/* Dynamic Island brightness slider */
+.di-br{display:flex;align-items:center;gap:12px;width:100%;}
+.di-br input[type=range]{flex:1;accent-color:var(--accent);height:28px;}
+.di-br b{width:46px;text-align:right;font-variant-numeric:tabular-nums;font-size:14px;}
+/* ---- design pass: things that sat wrong ---- */
+/* headings with a button beside them ("Workouts  + New") were pushed in and down by each design's own label padding */
+[data-design] .section-label-row .section-label,.section-label-row .section-label{padding:0 !important;}
+.section-label-row{align-items:center;}
+/* Workout: "Other" looked like loose text, the alternative workouts ran off the screen */
+.wk-go .btn-secondary{background:var(--fill);color:var(--text);border-radius:var(--radius-sm);}
+.wk-chips{flex-wrap:wrap;overflow:visible;}
+/* Activities collage: tiles stretched to close holes keep a readable layout */
+.ac-t.ac-x{flex-direction:row;align-items:center;justify-content:flex-start;gap:10px;padding:10px 12px;}
+.ac-t.ac-x .ac-b{flex:1;width:auto;}
+.ac-t.ac-x .ac-s{display:block;}
+.ac-t.ac-x .act-ico{width:34px;height:34px;border-radius:11px;}
+</style>
+
+
 </body></html>
