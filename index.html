@@ -19312,4 +19312,206 @@ ACT_ICONS.apps = '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13
 })();
 </script>
 
+<style id="lifeos-rtx-css">
+/* 24 Nov: routine task extras (open an app, photo, notification) */
+.rt-app{flex:none;margin-left:auto;width:28px;height:28px;border-radius:9px;border:1px solid var(--sep);background:var(--fill);font-size:15px;line-height:1;display:inline-flex;align-items:center;justify-content:center;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.rt-app + .rt-app{margin-left:4px;}
+.rt-app:active{transform:scale(.88);}
+.rx-row{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px;}
+.rx-btn{border:0;border-radius:999px;padding:9px 14px;background:var(--fill);color:var(--text);font:inherit;font-size:14px;font-weight:650;cursor:pointer;}
+.rx-btn.pri{background:var(--accent);color:var(--accent-ink,#fff);}
+.rx-btn:active{transform:scale(.95);}
+.rx-sec{margin:4px 0 14px;}
+.rx-sec > b{display:block;font-size:12.5px;font-weight:700;color:var(--text-3);letter-spacing:.03em;margin:0 0 8px;text-transform:uppercase;}
+.rx-sec .chip-row{flex-wrap:wrap;gap:6px;}
+.rx-msg{width:100%;box-sizing:border-box;margin-top:8px;border:1px solid var(--sep);border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;color:var(--text);background:var(--card);outline:none;}
+</style>
+<script id="lifeos-rtx">
+/* ============ ROUTINE TASK EXTRAS (24 Nov) ============
+   Stored on the routine template task (profile routine), read by refId:
+     t.appId   -> a button that opens that app (from Activities > Apps)
+     t.photo   -> a camera button on the task
+     t.notify  -> {before:min, text}; kept in state.notifs as id 'rt_'+t.id
+   Apps marked "meals" (Bevel by default) show on every meal task. */
+AP_PRESETS.push(
+  {name:'Bevel', emoji:'💚', url:'bevel://', web:'https://bevel.health', meals:true},
+  {name:'Halo', emoji:'⭕', url:'halo://', web:''}
+);
+/* existing app lists get Bevel and Halo once */
+(function(){
+  const _al = apList;
+  apList = function(){
+    const L = _al.apply(this, arguments);
+    if(!state.appsAdded2){
+      state.appsAdded2 = true;
+      ['Bevel','Halo'].forEach(n=>{ if(!L.some(a=>a.name===n)) L.push(Object.assign({id:uid()}, AP_PRESETS.find(p=>p.name===n))); });
+      try{ saveState(); }catch(e){}
+    }
+    return L;
+  };
+})();
+function rxTmpl(refId){
+  if(!refId || !state) return null;
+  try{ const a = activeRoutine().find(t=>t.id===refId); if(a) return a; }catch(e){}
+  for(const p of (state.profiles||[])) { const t = (p.routine||[]).find(x=>x.id===refId); if(t) return t; }
+  return null;
+}
+function rxApps(it){
+  const out = [], seen = new Set(), L = apList();
+  const t = rxTmpl(it && it.refId);
+  const add = a=>{ if(a && !seen.has(a.id)){ seen.add(a.id); out.push(a); } };
+  if(it && it.appId) add(L.find(a=>a.id===it.appId));
+  if(t && t.appId) add(L.find(a=>a.id===t.appId));
+  if(it && it.category==='meal') L.filter(a=>a.meals).forEach(add);
+  return out;
+}
+function rxPhoto(it){ const t = rxTmpl(it && it.refId); return !!(t && t.photo); }
+function rxAppBtn(a, cls){ return `<button type="button" class="${cls}" onclick="event.stopPropagation();apGo('${a.id}')" aria-label="Open ${escapeHtml(a.name)}" title="Open ${escapeHtml(a.name)}">${escapeHtml(a.emoji||'🔗')}${cls==='rt-app'?'':' '+escapeHtml(a.name)}</button>`; }
+
+/* tile face: one-tap app buttons */
+(function(){
+  const _rt = routineTile;
+  routineTile = function(it, lf, ef, date){
+    let h = _rt.apply(this, arguments);
+    try{
+      const A = rxApps(it); if(!A.length) return h;
+      const btns = A.slice(0,2).map(a=>rxAppBtn(a,'rt-app')).join('');
+      h = h.replace(/(<span class="rt-sub">[\s\S]*?<\/span>)/, '$1'+btns);
+    }catch(e){ console.error('rtx tile', e); }
+    return h;
+  };
+  const _td = tileDropdown;
+  tileDropdown = function(it, focusId, date, c){
+    let h = _td.apply(this, arguments);
+    try{
+      const A = rxApps(it), ph = rxPhoto(it);
+      if(!A.length && !ph) return h;
+      const pk = photoKey(date, it.refId), safeT = String(plainTitle(it.title||'')).replace(/['"\\]/g,'');
+      const row = `<div class="rx-row">${A.map(a=>rxAppBtn(a,'rx-btn pri')).join('')}${ph?`<button type="button" class="rx-btn" onclick="event.stopPropagation();photoTap('${pk}','${safeT}')">📷 ${photoHas(pk)?'See photo':'Add photo'}</button>`:''}</div>`;
+      h = h.replace('<div class="dd-actions">', row+'<div class="dd-actions">');
+    }catch(e){ console.error('rtx dropdown', e); }
+    return h;
+  };
+  const _pk = pkTaskHtml;
+  pkTaskHtml = function(it){
+    let h = _pk.apply(this, arguments);
+    try{
+      const A = rxApps(it); if(!A.length) return h;
+      h = h.replace('<div class="pk-a">', `<div class="pk-a">${A.map(a=>`<button type="button" class="pri" onclick="apGo('${a.id}')">${escapeHtml(a.emoji||'🔗')} ${escapeHtml(a.name)}</button>`).join('')}</div><div class="pk-a" style="margin-top:8px">`);
+    }catch(e){ console.error('rtx peek', e); }
+    return h;
+  };
+})();
+
+/* ---- the extras section in Add Task / Edit Task (routine template) ---- */
+let rxDraft = null;
+const RX_BEFORE = [[-1,'Off'],[0,'At the time'],[5,'5 min before'],[15,'15 min before'],[30,'30 min before']];
+function rxSectionHtml(){
+  const d = rxDraft, L = apList();
+  const chip = (on, label, fn)=>`<button type="button" class="chip ${on?'active':''}" onclick="${fn}">${label}</button>`;
+  return `<div id="rxBox">
+    <div class="section-label" style="padding-left:0">Extras</div>
+    <div class="rx-sec"><b>🔔 Notification</b>
+      <div class="chip-row">${RX_BEFORE.map(([v,l])=>chip(d.before===v, l, `rxSet('before',${v})`)).join('')}</div>
+      ${d.before>=0 ? `<input class="rx-msg" id="rxText" value="${escapeHtml(d.text||'')}" placeholder="Message (optional)" oninput="rxDraft.text=this.value">
+      <div class="hint" style="margin:6px 0 0">Sent to your phone on the days this task is in your routine. Needs a time (e.g. 07:00) and notifications turned on in Settings.</div>` : ''}
+    </div>
+    <div class="rx-sec"><b>📷 Photo</b>
+      <div class="chip-row">${chip(!d.photo,'Off',"rxSet('photo',false)")}${chip(d.photo,'Photo button',"rxSet('photo',true)")}</div>
+    </div>
+    <div class="rx-sec"><b>📲 Open an app</b>
+      <div class="chip-row">${chip(!d.appId,'None',"rxSet('appId','')")}${L.map(a=>chip(d.appId===a.id, escapeHtml((a.emoji||'🔗')+' '+(a.name||'App')), `rxSet('appId','${a.id}')`)).join('')}</div>
+      <div class="hint" style="margin:6px 0 0">Adds a button on the task that jumps straight to the app. Add more apps in Activities › Apps.</div>
+    </div>
+  </div>`;
+}
+function rxSet(k, v){ rxDraft[k] = v; const b = document.getElementById('rxBox'); if(b) b.outerHTML = rxSectionHtml(); }
+function rxDraftFrom(t){
+  const n = t && t.notify;
+  rxDraft = {before: n && n.before!=null ? Number(n.before) : -1, text: (n && n.text) || '', photo: !!(t && t.photo), appId: (t && t.appId) || ''};
+}
+function rxApplyTo(t){
+  if(!t || !rxDraft) return;
+  const d = rxDraft;
+  if(d.appId) t.appId = d.appId; else delete t.appId;
+  if(d.photo) t.photo = true; else delete t.photo;
+  if(d.before>=0) t.notify = {before:d.before, text:(d.text||'').trim()}; else delete t.notify;
+  rxSyncNotif(t);
+}
+function rxMinus(time, m){ const [h,mm] = time.split(':').map(Number); let x = ((h*60+mm-m)%1440+1440)%1440; return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0'); }
+function rxSyncNotif(t){
+  try{
+    const id = 'rt_'+t.id;
+    let L = pnList().filter(n=>n.id!==id);
+    if(t.notify && !t.hidden){
+      if(!/^\d{1,2}:\d{2}$/.test(t.time||'')){ toast('Add a time (e.g. 07:00) so the notification knows when to go off'); }
+      else {
+        const tm = t.time.length===4 ? '0'+t.time : t.time, b = Number(t.notify.before)||0;
+        const title = plainTitle(t.title||'Routine');
+        L.push({id, title: (b ? title+' in '+b+' min' : title), text: t.notify.text || (b ? 'Coming up in your routine.' : 'Time for this now.'),
+          time: rxMinus(tm, b), days: Array.isArray(t.repeatDays) ? t.repeatDays.slice() : [], date:'', on:true, kind:'normal', rtId:t.id});
+      }
+    }
+    state.notifs = L;
+  }catch(e){ console.error('rtx notif', e); }
+}
+(function(){
+  const inject = (before)=>{
+    const body = document.querySelector('#sheet .sheet-body'); if(!body) return;
+    const anchor = before ? body.querySelector(before) : null;
+    if(anchor) anchor.insertAdjacentHTML('beforebegin', rxSectionHtml()); else body.insertAdjacentHTML('beforeend', rxSectionHtml());
+  };
+  const _oe = openEditRoutineItem;
+  openEditRoutineItem = function(id){
+    _oe.apply(this, arguments);
+    try{ const t = activeRoutine().find(x=>x.id===id); if(!t) return; rxDraftFrom(t); inject('.btn-primary'); }catch(e){ console.error(e); }
+  };
+  const _se = saveRoutineItem;
+  saveRoutineItem = function(id){
+    try{ const t = activeRoutine().find(x=>x.id===id); const tx = document.getElementById('rxText'); if(tx && rxDraft) rxDraft.text = tx.value; const r = _se.apply(this, arguments); rxApplyTo(t); saveState(); render(); return r; }
+    catch(e){ console.error(e); }
+  };
+  const _oa = openAddRoutineItem;
+  openAddRoutineItem = function(){
+    _oa.apply(this, arguments);
+    try{ rxDraftFrom(null); inject(null); }catch(e){ console.error(e); }
+  };
+  const _ad = addRoutineItem;
+  addRoutineItem = function(){
+    const tx = document.getElementById('rxText'); if(tx && rxDraft) rxDraft.text = tx.value;
+    const before = new Set(activeRoutine().map(t=>t.id));
+    const r = _ad.apply(this, arguments);
+    try{ const t = activeRoutine().find(x=>!before.has(x.id)); if(t){ rxApplyTo(t); saveState(); render(); } }catch(e){ console.error(e); }
+    return r;
+  };
+  const _rm = removeRoutineItem;
+  removeRoutineItem = function(id){
+    const r = _rm.apply(this, arguments);
+    try{ if(!activeRoutine().some(t=>t.id===id)){ state.notifs = pnList().filter(n=>n.id!=='rt_'+id); saveState(); } }catch(e){}
+    return r;
+  };
+  /* Quick Add gets a "Routine task" option */
+  const _qa = openQuickAdd;
+  openQuickAdd = function(){
+    _qa.apply(this, arguments);
+    try{ const g = document.querySelector('#sheet .qa-grid'); if(g) g.insertAdjacentHTML('beforeend', `<button class="qa-btn" onclick="openAddRoutineItem()"><span class="qa-i">🔁</span><div class="qa-t">Routine task</div><div class="qa-s">A new part of your routine</div></button>`); }catch(e){}
+  };
+})();
+/* Apps editor: "Show on meal tasks" switch */
+(function(){
+  const _er = apEditRender;
+  apEditRender = function(){
+    _er.apply(this, arguments);
+    try{
+      const w = document.getElementById('apWeb'); if(!w) return;
+      w.closest('.ap-f').insertAdjacentHTML('afterend', `<div class="ap-f"><label>SHOW ON MEAL TASKS</label><div class="chip-row"><button type="button" class="chip ${apDraft.meals?'':'active'}" onclick="apDraft.meals=false;apKeep();apEditRender()">No</button><button type="button" class="chip ${apDraft.meals?'active':''}" onclick="apDraft.meals=true;apKeep();apEditRender()">Yes</button></div></div>`);
+    }catch(e){}
+  };
+})();
+function apKeep(){ const v = id=>{ const el = document.getElementById(id); return el ? el.value : null; }; const n = v('apName'); if(n!==null){ apDraft.name = n; apDraft.emoji = v('apEmoji'); apDraft.url = v('apUrl'); apDraft.web = v('apWeb'); } }
+/* redraw once so tiles drawn before this loaded get their buttons */
+setTimeout(()=>{ try{ if(typeof state!=='undefined' && state) render(); }catch(e){} }, 0);
+(function(){ const _s = apSave; apSave = function(){ const m = apDraft && apDraft.meals; const r = _s.apply(this, arguments); try{ if(apDraft){ const a = apList().find(x=>x.id===apDraft.id); if(a){ if(m) a.meals = true; else delete a.meals; saveState(); render(); } } }catch(e){} return r; }; })();
+</script>
+
 </body></html>
