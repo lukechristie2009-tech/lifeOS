@@ -18778,7 +18778,8 @@ async function pnEnable(){
     if(!sub) sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: pnB64(PN_VAPID)});
     state.pushSubs = Object.assign({}, state.pushSubs||{}, {[pnDevId()]: JSON.parse(JSON.stringify(sub))});
     saveState(); render(); try{ if(LifeSync.syncNow) setTimeout(()=>LifeSync.syncNow(), 300); }catch(e){}
-    toast('Notifications on for this device');
+    toast('Notifications on. Sending your morning briefing as a test…');
+    setTimeout(()=>pnTest('morning'), 2500);
   }catch(e){ console.error(e); toast('Couldn\'t turn on notifications: '+(e && e.message || e)); }
 }
 async function pnDisable(){
@@ -18786,19 +18787,57 @@ async function pnDisable(){
   if(state.pushSubs){ const m = Object.assign({}, state.pushSubs); delete m[pnDevId()]; state.pushSubs = m; }
   saveState(); render(); toast('Notifications off for this device');
 }
-async function pnTest(){
+async function pnTest(kind){
   try{
     const t = window.LifeSync && await LifeSync.token(); if(!t){ toast('Sign in to sync first'); return; }
     try{ LifeSync.syncNow && LifeSync.syncNow(); }catch(e){}
     toast('Sending…');
     await new Promise(r=>setTimeout(r, 2500));
-    const r = await fetch(PN_FN, {method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer '+t}, body: JSON.stringify({test:true})});
+    const r = await fetch(PN_FN, {method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer '+t}, body: JSON.stringify({test: kind || 'morning'})});
     const j = await r.json().catch(()=>({}));
     toast(r.ok ? (j.ok ? 'Test sent to '+j.ok+' device'+(j.ok===1?'':'s') : 'No device took it. Turn notifications off and on again') : (j.error || 'Test failed'));
   }catch(e){ toast('Test failed: '+(e && e.message || e)); }
 }
 function uiAlertSafe(msg){ try{ if(typeof uiConfirm==='function'){ uiConfirm(msg, {title:'Notifications', ok:'OK'}); return; } }catch(e){} alert(msg); }
-function pnCfg(){ const c = state.pushCfg && typeof state.pushCfg==='object' ? state.pushCfg : {}; return {rem:!!c.rem, morning:c.morning!==false, morningTime:c.morningTime||'05:00', nudge:c.nudge!==false, nudgeAfter:Number(c.nudgeAfter)||30, listTime:c.listTime||'19:00', quiet:c.quiet||'21:30'}; }
+function pnCfg(){ const c = state.pushCfg && typeof state.pushCfg==='object' ? state.pushCfg : {}; return {rem:!!c.rem, morning:c.morning!==false, morningTime:c.morningTime||'05:30', gym:c.gym!==false, tick:c.tick!==false, streak:c.streak!==false, streakTime:c.streakTime||'19:30', review:c.review!==false, reviewTime:c.reviewTime||'20:45', focus:c.focus!==false}; }
+/* the built-in notifications (the server sends these; see supabase/functions/lifeos-push) */
+function pnBuiltInHtml(){
+  const c = pnCfg();
+  let ta = '5:30 PM', tb = '8:00 PM'; try{ const T = ciTimes(); ta = fmtClockTime(T.a); tb = fmtClockTime(T.b); }catch(e){}
+  const row = (k, title, sub, timeKey, timeVal)=> setToggleRow(title, sub, c[k], `pnSet('${k}',${!c[k]})`) + (c[k] && timeKey ? `<div class="row pn-sub"><div class="row-text"><div class="row-sub">Time</div></div>${pnTimeIn(timeKey, timeVal)}</div>` : '');
+  return row('morning', '☀️ Morning briefing', 'Points you to your briefing, with today\'s workout and a quote', 'morningTime', c.morningTime)
+    + row('gym', '🏋️ Gym targets', '5 min before Gym: today\'s split and the weights and reps to beat')
+    + row('tick', '✅ Tick off LifeOS', 'At '+ta+' and '+tb+', if you have things left to tick')
+    + row('streak', '🔥 Streak at risk', 'If routine tasks are still open, so you can save a perfect day', 'streakTime', c.streakTime)
+    + row('review', '📝 Daily review', 'If you haven\'t written today\'s review yet', 'reviewTime', c.reviewTime)
+    + row('focus', '🎯 Focus ending', '4pm, 2 days and 1 day before a Life or Ecom Focus ends');
+}
+/* tapping a notification opens the right place */
+function pnGo(where){
+  try{
+    closeSheet && closeSheet();
+    switch(String(where||'')){
+      case 'tickoff': navTo('dashboard'); setTimeout(()=>{ try{ openCheckIn('all'); }catch(e){} }, 350); break;
+      case 'workout': navTo('workout'); break;
+      case 'review': navTo('dashboard'); setTimeout(()=>{ try{ openDailyReviewEditor(todayISO()); }catch(e){} }, 350); break;
+      case 'life': focusTab='life'; navTo('focus'); try{ renderFocus(); }catch(e){} break;
+      case 'ecom': focusTab='ecommerce'; navTo('focus'); try{ renderFocus(); }catch(e){} break;
+      case 'reminders': goalsTab='reminders'; navTo('goals'); try{ renderGoals(); }catch(e){} break;
+      default: navTo('dashboard'); setTimeout(()=>{ const b = document.querySelector('.bf-card'); if(b) b.scrollIntoView({behavior:'smooth', block:'center'}); }, 400);
+    }
+  }catch(e){ console.error('pnGo', e); }
+}
+(function(){
+  try{
+    const go = new URLSearchParams(location.search).get('go');
+    if(go){
+      history.replaceState(null, '', location.pathname + location.hash);
+      const wait = ()=>{ if(typeof state!=='undefined' && state && typeof navTo==='function' && document.getElementById('pageWrap')) setTimeout(()=>pnGo(go), 600); else setTimeout(wait, 200); };
+      wait();
+    }
+    if('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e=>{ if(e.data && e.data.go) pnGo(e.data.go); });
+  }catch(e){}
+})();
 function pnSet(k, v){ state.pushCfg = Object.assign({}, state.pushCfg||{}, {[k]: v}); saveState(); render(); }
 function pnTimeIn(k, v){ return `<input type="time" class="pn-time" value="${escapeHtml(v)}" onclick="event.stopPropagation()" onchange="if(this.value)pnSet('${k}',this.value)">`; }
 function pnRemToggle(){ state.pushCfg = Object.assign({}, state.pushCfg||{}, {rem: !(state.pushCfg && state.pushCfg.rem)}); saveState(); render(); toast(state.pushCfg.rem ? 'Reminders with a time will ping you' : 'Reminders won\'t ping you'); }
@@ -18815,14 +18854,8 @@ function pnSettingsHtml(){
   const L = pnList(), here = pnHere(), nDev = Object.keys(state.pushSubs||{}).length;
   return `<div class="section-label">Phone notifications</div><div class="card">
       ${setToggleRow('Notifications on this device', here ? 'On. Your notifications pop up here even with LifeOS closed' : (pnIsIOS() && !pnStandalone() ? 'Off. Open LifeOS from your Home Screen to turn these on' : 'Off. Tap to allow notifications on this device'), here, here ? 'pnDisable()' : 'pnEnable()')}
-      ${nDev ? `<div class="row" style="cursor:pointer" onclick="pnTest()"><div class="row-text"><div class="row-title">Send a test</div><div class="row-sub">Checks it works. Set up on ${nDev} device${nDev===1?'':'s'}</div></div><div class="chevron">›</div></div>` : ''}
-      ${(()=>{ const c = pnCfg(); return `
-      ${setToggleRow('Morning summary', c.morning ? 'On. Your tasks, first job, reminders and briefing in one notification' : 'Off. No morning notification', c.morning, `pnSet('morning',${!c.morning})`)}
-      ${c.morning ? `<div class="row"><div class="row-text"><div class="row-title">Morning summary time</div></div>${pnTimeIn('morningTime', c.morningTime)}</div>` : ''}
-      ${setToggleRow('Nudge when a task isn\'t ticked', c.nudge ? 'On. If a routine task is still unticked '+c.nudgeAfter+' min after its time, you get a nudge' : 'Off. No nudges for late tasks', c.nudge, `pnSet('nudge',${!c.nudge})`)}
-      ${c.nudge ? `<div class="row"><div class="row-text"><div class="row-title">Nudge after</div></div><div class="pn-seg">${[15,30,60].map(m=>`<button type="button" class="chip ${c.nudgeAfter===m?'active':''}" onclick="pnSet('nudgeAfter',${m})">${m} min</button>`).join('')}</div></div>
-      <div class="row"><div class="row-text"><div class="row-title">Today's List check</div><div class="row-sub">Tells you what's left on the list</div></div>${pnTimeIn('listTime', c.listTime)}</div>
-      <div class="row"><div class="row-text"><div class="row-title">Quiet from</div><div class="row-sub">No nudges after this time</div></div>${pnTimeIn('quiet', c.quiet)}</div>` : ''}`; })()}
+      ${nDev ? `<div class="row" style="cursor:pointer" onclick="pnTest('morning')"><div class="row-text"><div class="row-title">Send a test</div><div class="row-sub">Sends today's morning briefing now. Set up on ${nDev} device${nDev===1?'':'s'}</div></div><div class="chevron">›</div></div>` : ''}
+      ${pnBuiltInHtml()}
       ${setToggleRow('Ping reminders that have a time', state.pushCfg && state.pushCfg.rem ? 'On. A reminder with a time pings you at that time' : 'Off. Only the notifications below go off', !!(state.pushCfg && state.pushCfg.rem), 'pnRemToggle()')}
     </div>
     <div class="section-label">Scheduled notifications</div><div class="card">
@@ -18996,6 +19029,7 @@ loadState().then(()=>{
 .pn-note{margin:14px 4px 0;color:var(--text-3);font-size:13.5px;}
 .pn-row .row-text{min-width:0;}
 .pn-seg{display:flex;gap:6px;}
+.pn-sub{padding-top:0 !important;}
 /* settings: what each one does */
 .row-what-chip{width:100%;margin:0 0 8px;}
 .row-sub + .row-what{margin-top:3px;}

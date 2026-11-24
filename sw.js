@@ -18,8 +18,14 @@ self.addEventListener('push', (e) => {
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const url = (e.notification.data && e.notification.data.url) || '/';
+  let go = '';
+  try { go = new URL(url, self.location.origin).searchParams.get('go') || ''; } catch (_) {}
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-    for (const c of list) { if ('focus' in c) return c.focus(); }
+    // app already open: bring it forward and tell it where to go
+    for (const c of list) {
+      if ('focus' in c) { c.postMessage({ go }); return c.focus(); }
+    }
+    // app closed: open it straight on that page
     return self.clients.openWindow(url);
   }));
 });
