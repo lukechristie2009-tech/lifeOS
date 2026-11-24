@@ -256,6 +256,12 @@ Deno.serve(async (req) => {
     if (body && body.dry && body.user) {
       const ctx = await loadDay(String(body.user), now.date);
       if (body.dow != null) now.dow = Number(body.dow);
+      if (body.send) {
+        const subRows = await rows(String(body.user), (q) => q.eq("key", "pushSubs"));
+        const n = body.send === "gym" ? await gymNote(String(body.user), ctx, now) : morningNote(ctx, now);
+        if (!n) return json({ error: "nothing to send" }, 400);
+        return json(await sendAll(subRows[0]?.value?.v || {}, { ...n, id: n.id + ":test" }));
+      }
       return json({
         now, items: ctx.items.length, morning: morningNote(ctx, now), gym: await gymNote(String(body.user), ctx, now),
         tick: tickNote(ctx, now, "a"), streak: streakNote(ctx, now), review: reviewNote(ctx), focus: focusNotes(ctx, now),
