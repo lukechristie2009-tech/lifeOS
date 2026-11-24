@@ -19226,7 +19226,7 @@ function apGo(id){
   const onHide = ()=>{ if(document.hidden) left = true; };
   document.addEventListener('visibilitychange', onHide);
   window.addEventListener('pagehide', onHide);
-  try{ location.href = app; }catch(e){}
+  try{ location.href = encodeURI(decodeURI(app)); }catch(e){ try{ location.href = app; }catch(_){} }
   setTimeout(()=>{
     document.removeEventListener('visibilitychange', onHide);
     window.removeEventListener('pagehide', onHide);
@@ -19334,7 +19334,7 @@ ACT_ICONS.apps = '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13
      t.notify  -> {before:min, text}; kept in state.notifs as id 'rt_'+t.id
    Apps marked "meals" (Bevel by default) show on every meal task. */
 AP_PRESETS.push(
-  {name:'Bevel', emoji:'💚', url:'bevel://', web:'https://bevel.health', meals:true},
+  {name:'Bevel', emoji:'💚', url:'shortcuts://run-shortcut?name=Open%20Bevel', web:'', meals:true},
   {name:'Halo', emoji:'⭕', url:'halo://', web:''}
 );
 /* existing app lists get Bevel and Halo once */
@@ -19535,7 +19535,7 @@ setTimeout(()=>{ try{ if(typeof state!=='undefined' && state) render(); }catch(e
    (a website can't read which apps are installed on the phone). */
 const AP_CAT = [
  ['Social',[['Instagram','📸','instagram://','https://www.instagram.com'],['TikTok','🎵','tiktok://','https://www.tiktok.com'],['Snapchat','👻','snapchat://','https://www.snapchat.com'],['YouTube','▶️','youtube://','https://www.youtube.com'],['Facebook','📘','fb://','https://www.facebook.com'],['Messenger','💬','fb-messenger://','https://www.messenger.com'],['WhatsApp','🟢','whatsapp://','https://web.whatsapp.com'],['Threads','🧵','barcelona://','https://www.threads.net'],['X (Twitter)','✖️','twitter://','https://x.com'],['Reddit','👽','reddit://','https://www.reddit.com'],['Pinterest','📌','pinterest://','https://www.pinterest.com'],['LinkedIn','💼','linkedin://','https://www.linkedin.com'],['Discord','🎮','discord://','https://discord.com/app'],['Telegram','✈️','tg://','https://web.telegram.org']]],
- ['Health & fitness',[['Bevel','💚','bevel://','https://bevel.health'],['Halo','⭕','halo://',''],['Health','❤️','x-apple-health://',''],['Fitness','🏃','fitnessapp://',''],['Strava','🧡','strava://','https://www.strava.com'],['MyFitnessPal','🥗','mfp://','https://www.myfitnesspal.com'],['Hevy','🏋️','hevy://','https://hevy.com']]],
+ ['Health & fitness',[['Bevel','💚','shortcuts://run-shortcut?name=Open%20Bevel',''],['Halo','⭕','halo://',''],['Health','❤️','x-apple-health://',''],['Fitness','🏃','fitnessapp://',''],['Strava','🧡','strava://','https://www.strava.com'],['MyFitnessPal','🥗','mfp://','https://www.myfitnesspal.com'],['Hevy','🏋️','hevy://','https://hevy.com']]],
  ['Work & business',[['Shopify','🛍️','shopify://','https://admin.shopify.com'],['Ads Manager','📣','','https://adsmanager.facebook.com'],['Meta Business Suite','📊','','https://business.facebook.com'],['Canva','🎨','canva://','https://www.canva.com'],['CapCut','✂️','capcut://','https://www.capcut.com'],['Notion','📓','notion://','https://www.notion.so'],['Slack','💬','slack://','https://app.slack.com'],['Gmail','✉️','googlegmail://','https://mail.google.com'],['Outlook','📨','ms-outlook://','https://outlook.live.com'],['Google Drive','🗂️','googledrive://','https://drive.google.com'],['Google Docs','📄','googledocs://','https://docs.google.com'],['Google Sheets','📗','googlesheets://','https://sheets.google.com'],['Google Calendar','🗓️','googlecalendar://','https://calendar.google.com'],['Teams','🟣','msteams://','https://teams.microsoft.com'],['Zoom','🎥','zoomus://','https://zoom.us']]],
  ['AI',[['ChatGPT','💬','','https://chatgpt.com'],['Claude','✳️','','https://claude.ai'],['Gemini','✨','','https://gemini.google.com'],['Perplexity','🔎','','https://www.perplexity.ai']]],
  ['iPhone apps',[['Calendar','📅','calshow://',''],['Notes','🗒️','mobilenotes://',''],['Reminders','☑️','x-apple-reminderkit://',''],['Messages','💭','sms:',''],['Mail','📧','message://',''],['FaceTime','📹','facetime://',''],['Photos','🖼️','photos-redirect://',''],['Clock / Alarms','⏰','clock-alarm://',''],['Maps','🗺️','maps://','https://maps.apple.com'],['Music','🎶','music://',''],['Podcasts','🎙️','podcasts://',''],['Files','📁','shareddocuments://',''],['Wallet','💳','shoebox://',''],['Find My','📍','findmy://',''],['App Store','🅰️','itms-apps://',''],['Shortcuts','⚡','shortcuts://','']]],
@@ -19581,6 +19581,24 @@ function apcAdd(name){
       const back = document.querySelector('#sheet .sheet-header .sheet-btn'); if(back) back.textContent = 'Done';
       void first;
     }catch(e){ console.error('apcat', e); }
+  };
+})();
+
+/* 24 Nov: apps whose own link doesn't work can open through an Apple Shortcut */
+function apUseShortcut(){
+  apKeep(); const n = (apDraft.name||'').trim() || 'App';
+  apDraft.url = 'shortcuts://run-shortcut?name='+encodeURIComponent('Open '+n); apDraft.web = '';
+  apEditRender();
+  uiConfirm('In the Shortcuts app: tap +, add the action "Open App", choose '+n+', and name the shortcut "Open '+n+'" exactly. Then tap Save here.', {title:'Make the Shortcut', ok:'Got it', danger:false});
+}
+(function(){
+  const _er = apEditRender;
+  apEditRender = function(){
+    _er.apply(this, arguments);
+    try{
+      const u = document.getElementById('apUrl'); if(!u) return;
+      u.closest('.ap-f').insertAdjacentHTML('afterend', `<button type="button" class="rx-btn" style="margin:-4px 0 14px" onclick="apUseShortcut()">⚡ Doesn't open? Use a Shortcut</button>`);
+    }catch(e){}
   };
 })();
 </script>
