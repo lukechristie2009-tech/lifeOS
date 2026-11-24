@@ -74,7 +74,7 @@ async function sendAll(subs: Any, n: Note) {
     if (!sub || typeof sub !== "object" || !(sub as Any).endpoint) continue;
     try {
       // deno-lint-ignore no-explicit-any
-      await webpush.sendNotification(sub as any, payload, { TTL: 3600 });
+      await webpush.sendNotification(sub as any, payload, { TTL: 3600, urgency: "high" });
       ok++;
     } catch (e) {
       fail++; console.error("push failed", (e as Any).statusCode, String(e).slice(0, 200));
