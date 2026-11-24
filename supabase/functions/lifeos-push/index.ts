@@ -83,6 +83,13 @@ async function sendAll(subs: Any, n: Note) {
   }
   return { ok, fail };
 }
+/* iPhone sometimes holds a web push until the next one arrives. Sending the
+   same notification again (same tag, so it only shows once) pushes it through. */
+async function sendTwice(subs: Any, n: Note) {
+  const r = await sendAll(subs, n);
+  if (r.ok) { await new Promise((res) => setTimeout(res, 10000)); await sendAll(subs, n); }
+  return r;
+}
 
 /* Everything about a user's day, loaded once per run */
 async function loadDay(userId: string, date: string) {
@@ -257,7 +264,7 @@ Deno.serve(async (req) => {
       let n: Note = { id: "test", title: "LifeOS", body: "Test notification. You're all set ✓", go: "briefing" };
       if (body.test === "morning") n = await morningNote(u.user.id, await loadDay(u.user.id, now.date), now);
       if (body.test === "gym") n = (await gymNote(u.user.id, await loadDay(u.user.id, now.date), now)) || n;
-      return json(await sendAll(subs, { ...n, id: n.id + ":test" }));
+      return json(await sendTwice(subs, { ...n, id: n.id + ":test" }));
     }
 
     // ---- scheduled run ----
@@ -272,7 +279,7 @@ Deno.serve(async (req) => {
         const subRows = await rows(String(body.user), (q) => q.eq("key", "pushSubs"));
         const n = body.send === "gym" ? await gymNote(String(body.user), ctx, now) : await morningNote(String(body.user), ctx, now);
         if (!n) return json({ error: "nothing to send" }, 400);
-        return json(await sendAll(subRows[0]?.value?.v || {}, { ...n, id: n.id + ":test" }));
+        return json(await sendTwice(subRows[0]?.value?.v || {}, { ...n, id: n.id + ":test" }));
       }
       return json({
         now, items: ctx.items.length, morning: await morningNote(String(body.user), ctx, now), gym: await gymNote(String(body.user), ctx, now),
@@ -349,7 +356,7 @@ Deno.serve(async (req) => {
       for (const o of out) {
         const { error } = await sb.from("lifeos_push_sent").insert({ user_id: userId, notif_id: o.id, slot: now.date });
         if (error) continue; // already sent today
-        sent += (await sendAll(u.subs, o)).ok;
+        sent += (await sendTwice(u.subs, o)).ok;
       }
     }
     return json({ at: now, sent });
