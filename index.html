@@ -19481,7 +19481,7 @@ function rxSyncNotif(t){
     const tx = document.getElementById('rxText'); if(tx && rxDraft) rxDraft.text = tx.value;
     const before = new Set(activeRoutine().map(t=>t.id));
     const r = _ad.apply(this, arguments);
-    try{ const t = activeRoutine().find(x=>!before.has(x.id)); if(t){ rxApplyTo(t); saveState(); render(); } }catch(e){ console.error(e); }
+    try{ const t = activeRoutine().find(x=>!before.has(x.id)); if(t){ rxApplyTo(t); rxAddToCurrentDays(t); saveState(); render(); } }catch(e){ console.error(e); }
     return r;
   };
   const _rm = removeRoutineItem;
@@ -19497,6 +19497,19 @@ function rxSyncNotif(t){
     try{ const g = document.querySelector('#sheet .qa-grid'); if(g) g.insertAdjacentHTML('beforeend', `<button class="qa-btn" onclick="openAddRoutineItem()"><span class="qa-i">🔁</span><div class="qa-t">Routine task</div><div class="qa-s">A new part of your routine</div></button>`); }catch(e){}
   };
 })();
+/* a new routine task also goes into the current Life Focus from today on (it used to wait for the next focus) */
+function rxAddToCurrentDays(t){
+  const f = getActiveLifeFocus(); if(!f || !Array.isArray(f.days) || t.hidden) return;
+  const today = todayISO();
+  f.days.forEach(day=>{
+    if(!day || day.date < today || !Array.isArray(day.items)) return;
+    const dow = new Date(day.date+'T00:00:00').getDay();
+    if(Array.isArray(t.repeatDays) && t.repeatDays.length && !t.repeatDays.includes(dow)) return;
+    if(day.items.some(i=>i.refId===t.id)) return;
+    const it = {id:uid(), refId:t.id, order:day.items.length, time:t.time||'', displayText:t.displayText||'', title:t.title, note:t.note||'', category:t.category||'routine', done:false, type:'item', expanded:false};
+    if(it.time) insertItemByTime(day, it); else { day.items.splice(Math.max(0, day.items.length-1), 0, it); day.items.forEach((x,i)=>{ x.order=i; }); }
+  });
+}
 /* Apps editor: "Show on meal tasks" switch */
 (function(){
   const _er = apEditRender;
