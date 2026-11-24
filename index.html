@@ -19370,16 +19370,7 @@ function rxAppBtn(a, cls){ return `<button type="button" class="${cls}" onclick=
 
 /* tile face: one-tap app buttons */
 (function(){
-  const _rt = routineTile;
-  routineTile = function(it, lf, ef, date){
-    let h = _rt.apply(this, arguments);
-    try{
-      const A = rxApps(it); if(!A.length) return h;
-      const btns = A.slice(0,2).map(a=>rxAppBtn(a,'rt-app')).join('');
-      h = h.replace(/(<span class="rt-sub">[\s\S]*?<\/span>)/, '$1'+btns);
-    }catch(e){ console.error('rtx tile', e); }
-    return h;
-  };
+  /* (tile-face app buttons removed 24 Nov: apps only show inside the opened task) */
   const _td = tileDropdown;
   tileDropdown = function(it, focusId, date, c){
     let h = _td.apply(this, arguments);
