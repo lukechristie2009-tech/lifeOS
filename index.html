@@ -19164,4 +19164,152 @@ loadState().then(()=>{
 </style>
 
 
+<style id="lifeos-apps-css">
+/* 24 Nov: Apps launcher */
+.ap-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 8px;padding:6px 2px 4px;}
+.ap-b{display:flex;flex-direction:column;align-items:center;gap:6px;background:none;border:0;padding:0;color:var(--text);font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;min-width:0;}
+.ap-b:active .ap-i{transform:scale(.9);}
+.ap-i{width:60px;height:60px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:30px;line-height:1;background:var(--card);box-shadow:var(--shadow);border:1px solid var(--sep);transition:transform .12s ease;}
+.ap-b.ap-add .ap-i{background:transparent;border:1.5px dashed var(--sep);box-shadow:none;color:var(--text-3);font-size:28px;}
+.ap-n{font-size:12px;font-weight:600;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ap-f{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+.ap-f label{font-size:12.5px;font-weight:700;color:var(--text-3);letter-spacing:.03em;}
+.ap-in{width:100%;box-sizing:border-box;border:1px solid var(--sep);border-radius:12px;padding:11px 13px;font:inherit;font-size:16px;color:var(--text);background:var(--card);outline:none;}
+.ap-pre{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+.ap-pre button{border:0;border-radius:999px;padding:7px 11px;background:var(--fill);color:var(--text);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;}
+.ap-pre button:active{transform:scale(.95);}
+.ap-del{width:100%;margin-top:10px;border:0;border-radius:var(--radius-sm,12px);padding:13px;background:color-mix(in srgb,var(--red,#ff453a) 14%,transparent);color:var(--red,#ff453a);font:inherit;font-weight:700;cursor:pointer;}
+</style>
+<script id="lifeos-apps">
+/* ============ APPS LAUNCHER (24 Nov) ============
+   A grid of shortcuts to other apps. Tapping one tries the app's own link
+   (e.g. instagram://) and, if nothing opens, falls back to its website.
+   Anything not covered can be opened through an Apple Shortcut:
+   shortcuts://run-shortcut?name=Your%20Shortcut */
+const AP_PRESETS = [
+  {name:'Instagram', emoji:'📸', url:'instagram://', web:'https://www.instagram.com'},
+  {name:'TikTok', emoji:'🎵', url:'tiktok://', web:'https://www.tiktok.com'},
+  {name:'YouTube', emoji:'▶️', url:'youtube://', web:'https://www.youtube.com'},
+  {name:'Spotify', emoji:'🎧', url:'spotify:', web:'https://open.spotify.com'},
+  {name:'ChatGPT', emoji:'💬', url:'', web:'https://chatgpt.com'},
+  {name:'Claude', emoji:'✳️', url:'', web:'https://claude.ai'},
+  {name:'Gmail', emoji:'✉️', url:'googlegmail://', web:'https://mail.google.com'},
+  {name:'Shopify', emoji:'🛍️', url:'shopify://', web:'https://admin.shopify.com'},
+  {name:'Ads Manager', emoji:'📣', url:'', web:'https://adsmanager.facebook.com'},
+  {name:'Canva', emoji:'🎨', url:'canva://', web:'https://www.canva.com'},
+  {name:'CapCut', emoji:'✂️', url:'capcut://', web:'https://www.capcut.com'},
+  {name:'Calendar', emoji:'📅', url:'calshow://', web:''},
+  {name:'Notes', emoji:'🗒️', url:'mobilenotes://', web:''},
+  {name:'Messages', emoji:'💭', url:'sms:', web:''},
+  {name:'Maps', emoji:'🗺️', url:'maps://', web:'https://maps.apple.com'},
+  {name:'Shortcuts', emoji:'⚡', url:'shortcuts://', web:''}
+];
+function apList(){
+  if(!Array.isArray(state.apps)){
+    state.apps = ['Instagram','TikTok','Spotify','ChatGPT','Claude','Gmail'].map(n=>Object.assign({id:uid()}, AP_PRESETS.find(p=>p.name===n)));
+  }
+  return state.apps;
+}
+function apNorm(u){
+  u = String(u||'').trim(); if(!u) return '';
+  if(/^[a-z][a-z0-9+.-]*:/i.test(u)) return u;          // already has a scheme (https:, instagram:, sms: ...)
+  if(/^[\w-]+(\.[\w-]+)+/.test(u)) return 'https://'+u;   // looks like a website
+  return u.replace(/:?\/*$/,'')+'://';                    // bare app name, e.g. "instagram"
+}
+function apGo(id){
+  const a = apList().find(x=>x.id===id); if(!a) return;
+  const app = apNorm(a.url); let web = apNorm(a.web);
+  const openWeb = ()=>{ try{ const w = window.open(web, '_blank'); if(!w) location.href = web; }catch(e){ location.href = web; } };
+  if(!app){ if(web) openWeb(); return; }
+  if(/^https?:/i.test(app)){ web = app; return openWeb(); }
+  let left = false;
+  const onHide = ()=>{ if(document.hidden) left = true; };
+  document.addEventListener('visibilitychange', onHide);
+  window.addEventListener('pagehide', onHide);
+  try{ location.href = app; }catch(e){}
+  setTimeout(()=>{
+    document.removeEventListener('visibilitychange', onHide);
+    window.removeEventListener('pagehide', onHide);
+    if(left || document.hidden) return;
+    if(web) openWeb(); else toast(a.name+" didn't open. Is it installed on this device?");
+  }, 1600);
+}
+function apGridHtml(){
+  return `<div class="ap-grid">${apList().map(a=>`
+    <button type="button" class="ap-b" onclick="apGo('${a.id}')" data-hold="apEdit('${a.id}')">
+      <span class="ap-i">${escapeHtml(a.emoji||'🔗')}</span><span class="ap-n">${escapeHtml(a.name||'App')}</span>
+    </button>`).join('')}
+    <button type="button" class="ap-b ap-add" onclick="apEdit(null)"><span class="ap-i">+</span><span class="ap-n">Add</span></button>
+  </div>`;
+}
+function openAppsPage(){
+  apList();
+  openSheet(`
+    <div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>Apps</h2><button class="sheet-btn bold" onclick="apEdit(null)">+ Add</button></div>
+    <div class="sheet-body">
+      <div class="hint" style="margin-top:0">Tap to jump to an app. Hold one to edit or remove it.</div>
+      ${apGridHtml()}
+      <div class="hint">If an app isn't installed on this device, its website opens instead. For any other app, make an Apple Shortcut that opens it and add it as <b>shortcuts://run-shortcut?name=</b> plus the shortcut's name.</div>
+    </div>`);
+  sheetRefreshFn = openAppsPage;
+}
+let apDraft = null;
+function apEdit(id){
+  const a = id ? apList().find(x=>x.id===id) : null;
+  apDraft = a ? Object.assign({}, a) : {id:null, name:'', emoji:'🔗', url:'', web:''};
+  apEditRender();
+}
+function apEditRender(){
+  const d = apDraft, have = new Set(apList().map(a=>a.name));
+  const pre = d.id ? '' : `<div class="ap-f"><label>QUICK ADD</label></div><div class="ap-pre">${AP_PRESETS.filter(p=>!have.has(p.name)).map((p,i)=>`<button type="button" onclick="apPreset('${p.name.replace(/'/g,'')}')">${p.emoji} ${escapeHtml(p.name)}</button>`).join('') || '<span class="hint" style="margin:0">All added.</span>'}</div>`;
+  openSheet(`
+    <div class="sheet-header"><button class="sheet-btn" onclick="openAppsPage()">Back</button><h2>${d.id?'Edit app':'Add app'}</h2><button class="sheet-btn bold" onclick="apSave()">Save</button></div>
+    <div class="sheet-body">
+      ${pre}
+      <div class="ap-f"><label>NAME</label><input class="ap-in" id="apName" value="${escapeHtml(d.name)}" placeholder="e.g. Instagram"></div>
+      <div class="ap-f"><label>ICON (EMOJI)</label><input class="ap-in" id="apEmoji" value="${escapeHtml(d.emoji)}" maxlength="4"></div>
+      <div class="ap-f"><label>APP LINK</label><input class="ap-in" id="apUrl" value="${escapeHtml(d.url)}" placeholder="e.g. instagram://" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+      <div class="ap-f"><label>WEBSITE (BACKUP)</label><input class="ap-in" id="apWeb" value="${escapeHtml(d.web)}" placeholder="e.g. instagram.com" autocapitalize="off" autocorrect="off" spellcheck="false"></div>
+      <div class="hint" style="margin-top:0">Either one is enough. A website on its own just opens in the browser.</div>
+      ${d.id?`<button type="button" class="ap-del" onclick="apDelete('${d.id}')">Remove from Apps</button>`:''}
+    </div>`);
+  sheetRefreshFn = null;
+}
+function apPreset(name){
+  const p = AP_PRESETS.find(x=>x.name===name); if(!p) return;
+  apList().push(Object.assign({id:uid()}, p)); saveState(); toast(p.name+' added'); openAppsPage(); try{ renderActivities(); }catch(e){}
+}
+function apSave(){
+  const v = id=>{ const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const d = Object.assign(apDraft, {name:v('apName'), emoji:v('apEmoji')||'🔗', url:v('apUrl'), web:v('apWeb')});
+  if(!d.name){ toast('Give it a name'); return; }
+  if(!d.url && !d.web){ toast('Add an app link or a website'); return; }
+  if(d.id){ const i = apList().findIndex(x=>x.id===d.id); if(i>=0) apList()[i] = d; }
+  else { d.id = uid(); apList().push(d); }
+  saveState(); openAppsPage(); try{ renderActivities(); }catch(e){}
+}
+async function apDelete(id){
+  const a = apList().find(x=>x.id===id); if(!a) return;
+  const ok = await uiConfirm('Remove '+(a.name||'this app')+' from Apps?', {title:'Remove app?', ok:'Remove'}); if(!ok) return;
+  state.apps = apList().filter(x=>x.id!==id); saveState(); openAppsPage(); try{ renderActivities(); }catch(e){}
+}
+/* wiring: an Apps tile in Activities */
+ACT_ICONS.apps = '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/>';
+(function(){
+  const _oa = openActivity;
+  openActivity = function(k){ if(k==='apps') return openAppsPage(); return _oa.apply(this, arguments); };
+  const _at = actTiles;
+  actTiles = function(){
+    const list = _at.apply(this, arguments);
+    try{
+      const L = apList();
+      const stat = L.length ? L.slice(0,6).map(a=>escapeHtml(a.emoji||'🔗')).join(' ') : 'Add shortcuts to your apps';
+      const i = list.findIndex(t=>t.k==='today');
+      list.splice(i>=0 ? i+1 : list.length, 0, {k:'apps', size:'w', name:'Apps', stat});
+    }catch(e){ console.error('apps tile', e); }
+    return list;
+  };
+})();
+</script>
+
 </body></html>
