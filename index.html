@@ -9115,6 +9115,11 @@ function openNewReminderSheet(){
       ${reminderAnchorFieldHtml('rAnchor','')}
       ${repeatFieldHtml('rNew', null)}
       <div class="field"><label>Notes</label><textarea id="rNotes"></textarea></div>
+      <div class="field"><label>Notification</label><div class="chip-row" id="rNotifRow">
+        <button class="chip active" data-cat="" onclick="selectChip(this,'rNotifRow')">None</button>
+        <button class="chip" data-cat="at" onclick="selectChip(this,'rNotifRow')">🔔 At its time</button>
+        <button class="chip" data-cat="custom" onclick="selectChip(this,'rNotifRow')">✏️ Customise</button>
+      </div><div class="row-sub" style="margin-top:4px">"At its time" pings your phone at the reminder's date and time. "Customise" lets you set the heading, message, or an SOS.</div></div>
     </div>
   `);
   document.querySelector('#rCatRow .chip').classList.add('active');
@@ -9150,7 +9155,12 @@ function createReminder(){
   const rp = readRepeatField('rNew');
   if(rp) newRem.repeat = rp;
   state.reminders.push(newRem);
+  const nf = document.querySelector('#rNotifRow .chip.active')?.dataset.cat || '';
   saveState(); closeSheet(); toast('Reminder added'); renderGoals(); render();
+  if(nf==='at'){
+    pnList().push({id:uid(), title:'🔔 '+title, text:notes, time: time || '08:00', date: newRem.date || '', days: newRem.date ? [] : [1,2,3,4,5,6,0], on:true, kind:'normal', remId:newRem.id});
+    saveState(); render(); toast('Reminder added · notification at '+fmtClockTime(time || '08:00'));
+  } else if(nf==='custom') pnFromReminder(newRem.id);
 }
 function openReminderDetail(id){
   const r=state.reminders.find(x=>x.id===id);
@@ -9179,6 +9189,7 @@ function openReminderDetail(id){
       <div class="field"><label>Notes</label><textarea id="rNotes2">${escapeHtml(r.notes||'')}</textarea></div>
       <div class="btn-stack">
         <button class="btn-primary" onclick="saveReminderEdit('${id}')">Save</button>
+        <button class="btn-secondary" onclick="pnFromReminder('${id}')">${(state.notifs||[]).some(n=>n.remId===id) ? '🔔 Add another notification' : '🔔 Add a notification'}</button>
         <div class="btn-pair">
           <button class="btn-secondary" onclick="closeSheet();toggleReminder('${id}')">${r.done?'Mark not done':'✓ Complete'}</button>
           ${r.done?'':`<button class="btn-secondary" onclick="closeSheet();snoozeReminder('${id}')">Tomorrow →</button>`}
@@ -18745,9 +18756,10 @@ function setDescribe(root){
 
 /* ================================================================
    24 Nov 2026: phone notifications
-   state.notifs   = [{id, title, text, time:'HH:MM', days:[0-6], date:'', on}]
-   state.pushSubs = {deviceId: PushSubscription}  (one per phone/computer)
-   state.pushCfg  = {rem:true}  also ping reminders that have a time
+   state.notifs   = [{id, title, text, time:'HH:MM', days:[0-6], date:'', on,
+                      kind:'normal'|'sos', every:min, hours:n, doneOn:'YYYY-MM-DD', remId}]
+   state.pushSubs = {deviceId: PushSubscription + {label, off}}  one per phone/computer
+   state.pushCfg  = settings for the built-in notifications (see pnCfg)
    A Supabase function (lifeos-push) checks every 5 minutes and sends them,
    so they arrive with the app closed. iPhone: only works from the
    Home Screen app (Share › Add to Home Screen), iOS 16.4+.
@@ -18761,9 +18773,24 @@ function pnSupported(){ return 'serviceWorker' in navigator && 'PushManager' in 
 function pnIsIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1); }
 function pnStandalone(){ return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone===true; }
 function pnDevId(){ try{ return (window.LifeSync && LifeSync.deviceId) || localStorage.getItem('lifeos-device-id') || 'dev'; }catch(e){ return 'dev'; } }
-function pnHere(){ return !!(state.pushSubs && state.pushSubs[pnDevId()]) && typeof Notification!=='undefined' && Notification.permission==='granted'; }
+function pnDevLabel(){
+  const ua = navigator.userAgent;
+  if(/iphone/i.test(ua)) return 'iPhone';
+  if(/ipad/i.test(ua) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)) return 'iPad';
+  if(/macintosh|mac os/i.test(ua)) return 'Mac';
+  if(/android/i.test(ua)) return 'Android';
+  if(/windows/i.test(ua)) return 'Windows PC';
+  return 'This device';
+}
+function pnDevIcon(l){ return /iphone|android/i.test(l) ? '📱' : /ipad/i.test(l) ? '📲' : '💻'; }
+function pnSubs(){ return state.pushSubs && typeof state.pushSubs==='object' ? state.pushSubs : {}; }
+function pnHere(){ return !!pnSubs()[pnDevId()] && typeof Notification!=='undefined' && Notification.permission==='granted'; }
 function pnB64(s){ const p = '='.repeat((4 - s.length % 4) % 4), b = atob((s + p).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from(b, c=>c.charCodeAt(0)); }
 (function(){ try{ if('serviceWorker' in navigator && location.protocol==='https:') window.addEventListener('load', ()=>navigator.serviceWorker.register('/sw.js').catch(e=>console.warn('sw', e))); }catch(e){} })();
+/* label this device's subscription if it was saved before labels existed */
+(function(){ const go = ()=>{ try{ const s = pnSubs()[pnDevId()]; if(s && !s.label){ state.pushSubs = Object.assign({}, pnSubs(), {[pnDevId()]: Object.assign({}, s, {label: pnDevLabel()})}); saveState(); } }catch(e){} };
+  const wait = ()=>{ if(typeof state!=='undefined' && state) setTimeout(go, 3000); else setTimeout(wait, 500); }; wait(); })();
+
 async function pnEnable(){
   if(!pnSupported() || (pnIsIOS() && !pnStandalone())){
     uiAlertSafe(pnIsIOS() ? 'On iPhone, notifications only work from the Home Screen app. In Safari tap Share › Add to Home Screen, open LifeOS from there, then turn this on.' : 'This browser can\'t do notifications. Try Safari or Chrome.');
@@ -18776,16 +18803,24 @@ async function pnEnable(){
     const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if(!sub) sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: pnB64(PN_VAPID)});
-    state.pushSubs = Object.assign({}, state.pushSubs||{}, {[pnDevId()]: JSON.parse(JSON.stringify(sub))});
+    const rec = Object.assign(JSON.parse(JSON.stringify(sub)), {label: pnDevLabel(), off:false});
+    state.pushSubs = Object.assign({}, pnSubs(), {[pnDevId()]: rec});
     saveState(); render(); try{ if(LifeSync.syncNow) setTimeout(()=>LifeSync.syncNow(), 300); }catch(e){}
     toast('Notifications on. Sending your morning briefing as a test…');
     setTimeout(()=>pnTest('morning'), 2500);
   }catch(e){ console.error(e); toast('Couldn\'t turn on notifications: '+(e && e.message || e)); }
 }
-async function pnDisable(){
-  try{ const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); if(sub) await sub.unsubscribe(); }catch(e){}
-  if(state.pushSubs){ const m = Object.assign({}, state.pushSubs); delete m[pnDevId()]; state.pushSubs = m; }
-  saveState(); render(); toast('Notifications off for this device');
+/* turn a device on or off from any device (the subscription stays, it just isn't sent to) */
+function pnDevToggle(id){
+  const s = pnSubs()[id];
+  if(!s){ if(id===pnDevId()) pnEnable(); return; }
+  state.pushSubs = Object.assign({}, pnSubs(), {[id]: Object.assign({}, s, {off: !s.off})});
+  saveState(); render(); toast((s.label||'Device')+(s.off ? ' notifications on' : ' notifications off'));
+}
+function pnDevRemove(id){
+  const s = pnSubs()[id]; if(!s) return;
+  const m = Object.assign({}, pnSubs()); delete m[id]; state.pushSubs = m;
+  saveState(); render(); toast((s.label||'Device')+' removed. Turn it back on from that device');
 }
 async function pnTest(kind){
   try{
@@ -18795,28 +18830,61 @@ async function pnTest(kind){
     await new Promise(r=>setTimeout(r, 2500));
     const r = await fetch(PN_FN, {method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer '+t}, body: JSON.stringify({test: kind || 'morning'})});
     const j = await r.json().catch(()=>({}));
-    toast(r.ok ? (j.ok ? 'Test sent to '+j.ok+' device'+(j.ok===1?'':'s') : 'No device took it. Turn notifications off and on again') : (j.error || 'Test failed'));
+    toast(r.ok ? (j.ok ? 'Sent to '+j.ok+' device'+(j.ok===1?'':'s') : 'No device took it. Turn notifications off and on again') : (j.error || 'Test failed'));
   }catch(e){ toast('Test failed: '+(e && e.message || e)); }
 }
 function uiAlertSafe(msg){ try{ if(typeof uiConfirm==='function'){ uiConfirm(msg, {title:'Notifications', ok:'OK'}); return; } }catch(e){} alert(msg); }
-function pnCfg(){ const c = state.pushCfg && typeof state.pushCfg==='object' ? state.pushCfg : {}; return {rem:!!c.rem, morning:c.morning!==false, morningTime:c.morningTime||'05:30', gym:c.gym!==false, tick:c.tick!==false, streak:c.streak!==false, streakTime:c.streakTime||'19:30', review:c.review!==false, reviewTime:c.reviewTime||'20:45', focus:c.focus!==false}; }
-/* the built-in notifications (the server sends these; see supabase/functions/lifeos-push) */
+
+/* ---- built-in notifications ---- */
+function pnCfg(){
+  const c = state.pushCfg && typeof state.pushCfg==='object' ? state.pushCfg : {};
+  return {
+    morning: c.morning!==false, morningTime: c.morningTime||'05:30',
+    gym: c.gym!==false,
+    tick: c.tick!==false, tick1: c.tick1||'07:45', tick2: c.tick2||'17:30',
+    evening: c.evening!==false, eveningTime: c.eveningTime||'20:00',
+    focus: c.focus!==false,
+    missed: !!c.missed, missedAfter: Number(c.missedAfter)||30,
+    rem: !!c.rem
+  };
+}
+function pnSet(k, v){ state.pushCfg = Object.assign({}, state.pushCfg||{}, {[k]: v}); saveState(); render(); }
+function pnTimeIn(k, v){ return `<input type="time" class="pn-time" value="${escapeHtml(v)}" onclick="event.stopPropagation()" onchange="if(this.value)pnSet('${k}',this.value)">`; }
 function pnBuiltInHtml(){
   const c = pnCfg();
-  let ta = '5:30 PM', tb = '8:00 PM'; try{ const T = ciTimes(); ta = fmtClockTime(T.a); tb = fmtClockTime(T.b); }catch(e){}
-  const row = (k, title, sub, timeKey, timeVal)=> setToggleRow(title, sub, c[k], `pnSet('${k}',${!c[k]})`) + (c[k] && timeKey ? `<div class="row pn-sub"><div class="row-text"><div class="row-sub">Time</div></div>${pnTimeIn(timeKey, timeVal)}</div>` : '');
-  return row('morning', '☀️ Morning briefing', 'Points you to your briefing, with today\'s workout and a quote', 'morningTime', c.morningTime)
-    + row('gym', '🏋️ Gym targets', '5 min before Gym: today\'s split and the weights and reps to beat')
-    + row('tick', '✅ Tick off LifeOS', 'At '+ta+' and '+tb+', if you have things left to tick')
-    + row('streak', '🔥 Streak at risk', 'If routine tasks are still open, so you can save a perfect day', 'streakTime', c.streakTime)
-    + row('review', '📝 Daily review', 'If you haven\'t written today\'s review yet', 'reviewTime', c.reviewTime)
-    + row('focus', '🎯 Focus ending', '4pm, 2 days and 1 day before a Life or Ecom Focus ends');
+  const tog = (k, title, sub)=>setToggleRow(title, sub, c[k], `pnSet('${k}',${!c[k]})`);
+  const time = (label, k, v)=>`<div class="row pn-sub"><div class="row-text"><div class="row-sub">${label}</div></div>${pnTimeIn(k, v)}</div>`;
+  return tog('morning', '☀️ Morning briefing', 'Your streak, today\'s workout with targets, and a quote')
+    + (c.morning ? time('Time', 'morningTime', c.morningTime) : '')
+    + tog('gym', '🏋️ Gym', '5 min before Gym: days in a row, your split and the weights to beat')
+    + tog('tick', '✅ Tick off tasks', 'Twice a day, only if you have things left to tick')
+    + (c.tick ? time('Morning', 'tick1', c.tick1) + time('Afternoon', 'tick2', c.tick2) : '')
+    + tog('evening', '🌙 Daily review + tick off', 'Tick off what\'s left, then rate your day')
+    + (c.evening ? time('Time', 'eveningTime', c.eveningTime) : '')
+    + tog('focus', '🎯 Focus ending', '4pm, 2 days and 1 day before a Life or Ecom Focus ends');
+}
+function pnStylesHtml(){
+  const c = pnCfg();
+  return setToggleRow('⏰ Missed routine task', c.missed ? 'On. A task still unticked '+c.missedAfter+' min after its time pings you once' : 'Off. Late tasks don\'t ping you', c.missed, `pnSet('missed',${!c.missed})`)
+    + (c.missed ? `<div class="row pn-sub"><div class="row-text"><div class="row-sub">Ping after</div></div><div class="pn-seg">${[15,30,60].map(m=>`<button type="button" class="chip ${c.missedAfter===m?'active':''}" onclick="pnSet('missedAfter',${m})">${m} min</button>`).join('')}</div></div>` : '')
+    + setToggleRow('🔔 Reminders with a time', c.rem ? 'On. A reminder with a time pings you at that time' : 'Off. Reminders don\'t ping on their own', c.rem, `pnSet('rem',${!c.rem})`);
+}
+function pnDevicesHtml(){
+  const subs = pnSubs(), me = pnDevId(), ids = Object.keys(subs);
+  const rows = ids.map(id=>{
+    const s = subs[id], lbl = s.label || (id===me ? pnDevLabel() : 'Device');
+    return `<div class="row pn-row"><div class="row-text"><div class="row-title">${pnDevIcon(lbl)} ${escapeHtml(lbl)}${id===me?' <span class="pn-me">this device</span>':''}</div><div class="row-sub">${s.off ? 'Off. Nothing is sent here' : 'On. Notifications arrive here'} · <a href="#" onclick="event.preventDefault();pnDevRemove('${id}')">Remove</a></div></div><button type="button" class="toggle ${s.off?'':'on'}" aria-label="On or off" onclick="pnDevToggle('${id}')"><div class="knob"></div></button></div>`;
+  }).join('');
+  const meRow = subs[me] ? '' : `<div class="row" style="cursor:pointer" onclick="pnEnable()"><div class="row-text"><div class="row-title" style="color:var(--accent)">+ Turn on for this ${escapeHtml(pnDevLabel())}</div><div class="row-sub">${pnIsIOS() && !pnStandalone() ? 'Open LifeOS from your Home Screen first' : 'Allow notifications on this device'}</div></div></div>`;
+  return rows + meRow;
 }
 /* tapping a notification opens the right place */
 function pnGo(where){
   try{
     closeSheet && closeSheet();
-    switch(String(where||'')){
+    const w = String(where||'');
+    if(w.indexOf('sos:')===0){ navTo('dashboard'); setTimeout(()=>pnSosSheet(w.slice(4)), 400); return; }
+    switch(w){
       case 'tickoff': navTo('dashboard'); setTimeout(()=>{ try{ openCheckIn('all'); }catch(e){} }, 350); break;
       case 'workout': navTo('workout'); break;
       case 'review': navTo('dashboard'); setTimeout(()=>{ try{ openDailyReviewEditor(todayISO()); }catch(e){} }, 350); break;
@@ -18838,69 +18906,102 @@ function pnGo(where){
     if('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e=>{ if(e.data && e.data.go) pnGo(e.data.go); });
   }catch(e){}
 })();
-function pnSet(k, v){ state.pushCfg = Object.assign({}, state.pushCfg||{}, {[k]: v}); saveState(); render(); }
-function pnTimeIn(k, v){ return `<input type="time" class="pn-time" value="${escapeHtml(v)}" onclick="event.stopPropagation()" onchange="if(this.value)pnSet('${k}',this.value)">`; }
-function pnRemToggle(){ state.pushCfg = Object.assign({}, state.pushCfg||{}, {rem: !(state.pushCfg && state.pushCfg.rem)}); saveState(); render(); toast(state.pushCfg.rem ? 'Reminders with a time will ping you' : 'Reminders won\'t ping you'); }
+
+/* ---- custom notifications (normal or SOS) ---- */
 function pnWhen(n){
   const t = n.time ? fmtClockTime(n.time) : 'No time';
-  if(n.date) return t+' · '+fmtDayDate(n.date);
-  const d = Array.isArray(n.days) ? n.days : [];
-  if(!d.length || d.length===7) return t+' · Every day';
-  if(d.length===5 && [1,2,3,4,5].every(x=>d.includes(x))) return t+' · Weekdays';
-  if(d.length===2 && d.includes(0) && d.includes(6)) return t+' · Weekends';
-  return t+' · '+PN_DAYS.filter(([k])=>d.includes(k)).map(([k])=>PN_DAYNAMES[k]).join(', ');
+  let when;
+  if(n.date) when = fmtDayDate(n.date);
+  else {
+    const d = Array.isArray(n.days) ? n.days : [];
+    when = !d.length || d.length===7 ? 'Every day' : (d.length===5 && [1,2,3,4,5].every(x=>d.includes(x))) ? 'Weekdays' : (d.length===2 && d.includes(0) && d.includes(6)) ? 'Weekends' : PN_DAYS.filter(([k])=>d.includes(k)).map(([k])=>PN_DAYNAMES[k]).join(', ');
+  }
+  if(n.kind==='sos') return '🚨 From '+t+', every '+(n.every||15)+' min for '+(n.hours||2)+'h · '+when+(n.doneOn===todayISO() ? ' · done today' : '');
+  return t+' · '+when;
 }
 function pnSettingsHtml(){
-  const L = pnList(), here = pnHere(), nDev = Object.keys(state.pushSubs||{}).length;
-  return `<div class="section-label">Phone notifications</div><div class="card">
-      ${setToggleRow('Notifications on this device', here ? 'On. Your notifications pop up here even with LifeOS closed' : (pnIsIOS() && !pnStandalone() ? 'Off. Open LifeOS from your Home Screen to turn these on' : 'Off. Tap to allow notifications on this device'), here, here ? 'pnDisable()' : 'pnEnable()')}
-      ${nDev ? `<div class="row" style="cursor:pointer" onclick="pnTest('morning')"><div class="row-text"><div class="row-title">Send a test</div><div class="row-sub">Sends today's morning briefing now. Set up on ${nDev} device${nDev===1?'':'s'}</div></div><div class="chevron">›</div></div>` : ''}
-      ${pnBuiltInHtml()}
-      ${setToggleRow('Ping reminders that have a time', state.pushCfg && state.pushCfg.rem ? 'On. A reminder with a time pings you at that time' : 'Off. Only the notifications below go off', !!(state.pushCfg && state.pushCfg.rem), 'pnRemToggle()')}
+  const L = pnList(), nDev = Object.keys(pnSubs()).length;
+  return `<div class="section-label">Devices</div><div class="card">
+      ${pnDevicesHtml()}
+      ${nDev ? `<div class="row" style="cursor:pointer" onclick="pnTest('morning')"><div class="row-text"><div class="row-title">Send a test</div><div class="row-sub">Sends today's morning briefing to every device that's on</div></div><div class="chevron">›</div></div>` : ''}
     </div>
-    <div class="section-label">Scheduled notifications</div><div class="card">
-      ${L.map(n=>`<div class="row pn-row"><div class="row-text" style="cursor:pointer" onclick="pnOpen('${n.id}')"><div class="row-title">${escapeHtml(n.text||'(no message)')}</div><div class="row-sub">${escapeHtml(pnWhen(n))}</div></div><button type="button" class="toggle ${n.on!==false?'on':''}" aria-label="On or off" onclick="event.stopPropagation();pnFlip('${n.id}')"><div class="knob"></div></button></div>`).join('')}
-      <div class="row" style="cursor:pointer" onclick="pnOpen()"><div class="row-text"><div class="row-title" style="color:var(--accent)">+ Add notification</div><div class="row-sub">Pick a message, a time and which days</div></div></div>
+    <div class="section-label">Daily notifications</div><div class="card">${pnBuiltInHtml()}</div>
+    <div class="section-label">Notification styles</div><div class="card">${pnStylesHtml()}</div>
+    <div class="section-label">Custom notifications</div><div class="card">
+      ${L.map(n=>`<div class="row pn-row"><div class="row-text" style="cursor:pointer" onclick="pnOpen('${n.id}')"><div class="row-title">${escapeHtml(n.title || n.text || '(no message)')}</div><div class="row-sub">${n.title && n.text ? escapeHtml(n.text)+'<br>' : ''}${escapeHtml(pnWhen(n))}</div></div><button type="button" class="toggle ${n.on!==false?'on':''}" aria-label="On or off" onclick="event.stopPropagation();pnFlip('${n.id}')"><div class="knob"></div></button></div>`).join('')}
+      <div class="row" style="cursor:pointer" onclick="pnOpen()"><div class="row-text"><div class="row-title" style="color:var(--accent)">+ Add notification</div><div class="row-sub">Your own heading and message, a time and days. Or an SOS that keeps going until it's done</div></div></div>
     </div>`;
 }
 function pnFlip(id){ const n = pnList().find(x=>x.id===id); if(!n) return; n.on = n.on===false; saveState(); render(); }
 let pnDraft = null;
-function pnOpen(id){
+function pnOpen(id, preset){
   const n = id ? pnList().find(x=>x.id===id) : null;
-  pnDraft = n ? JSON.parse(JSON.stringify(n)) : {id:null, text:'', time:'08:00', days:[1,2,3,4,5,6,0], date:'', on:true};
+  pnDraft = n ? JSON.parse(JSON.stringify(n)) : Object.assign({id:null, title:'', text:'', time:'08:00', days:[1,2,3,4,5,6,0], date:'', on:true, kind:'normal', every:15, hours:2}, preset||{});
   pnSheet();
 }
+function pnKeep(){ const t = document.getElementById('pnTitle'), x = document.getElementById('pnText'); if(t) pnDraft.title = t.value; if(x) pnDraft.text = x.value; }
 function pnSheet(){
-  const d = pnDraft, one = !!d.date;
+  const d = pnDraft, one = !!d.date, sos = d.kind==='sos';
   openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Cancel</button><h2>${d.id?'Notification':'New notification'}</h2><button class="sheet-btn bold" onclick="pnSave()">Save</button></div>
     <div class="sheet-body">
-      <div class="card"><div class="row"><input id="pnText" class="pn-in" placeholder="What should it say? e.g. Pack gym bag" value="${escapeHtml(d.text||'')}" oninput="pnDraft.text=this.value"></div>
-      <div class="row"><div class="row-text"><div class="row-title">Time</div></div><input type="time" class="pn-time" value="${escapeHtml(d.time||'')}" onchange="pnDraft.time=this.value"></div></div>
+      <div class="seg-row pn-mode"><button type="button" class="chip ${sos?'':'active'}" onclick="pnKeep();pnDraft.kind='normal';pnSheet()">🔔 Normal</button><button type="button" class="chip ${sos?'active':''}" onclick="pnKeep();pnDraft.kind='sos';pnSheet()">🚨 SOS</button></div>
+      ${sos ? `<p class="pn-note" style="margin:0 4px 12px">SOS keeps notifying you until you tap it and mark it done.</p>` : ''}
+      <div class="card">
+        <div class="row"><div class="row-text" style="width:100%"><div class="row-sub">Heading (top line)</div><input id="pnTitle" class="pn-in" placeholder="${sos?'e.g. 🚨 Finish the English essay':'e.g. 🎒 Pack your gym bag'}" value="${escapeHtml(d.title||'')}" oninput="pnDraft.title=this.value"></div></div>
+        <div class="row"><div class="row-text" style="width:100%"><div class="row-sub">Message (below it)</div><textarea id="pnText" class="pn-in pn-ta2" rows="2" placeholder="${sos?'e.g. Due tomorrow. Get it done.':'e.g. Shoes, towel, headphones, pre-workout'}" oninput="pnDraft.text=this.value">${escapeHtml(d.text||'')}</textarea></div></div>
+        <div class="row"><div class="row-text"><div class="row-title">${sos?'Starts at':'Time'}</div></div><input type="time" class="pn-time" value="${escapeHtml(d.time||'')}" onchange="pnDraft.time=this.value"></div>
+        ${sos ? `<div class="row"><div class="row-text"><div class="row-title">Every</div></div><div class="pn-seg">${[5,15,30,60].map(m=>`<button type="button" class="chip ${Number(d.every)===m?'active':''}" onclick="pnKeep();pnDraft.every=${m};pnSheet()">${m<60?m+'m':'1h'}</button>`).join('')}</div></div>
+        <div class="row"><div class="row-text"><div class="row-title">For</div></div><div class="pn-seg">${[1,2,4,8].map(h=>`<button type="button" class="chip ${Number(d.hours)===h?'active':''}" onclick="pnKeep();pnDraft.hours=${h};pnSheet()">${h}h</button>`).join('')}</div></div>` : ''}
+      </div>
       <div class="section-label">Repeat</div>
-      <div class="seg-row pn-mode"><button type="button" class="chip ${one?'':'active'}" onclick="pnDraft.date='';pnSheet()">On these days</button><button type="button" class="chip ${one?'active':''}" onclick="pnDraft.date=pnDraft.date||todayISO();pnSheet()">One day only</button></div>
+      <div class="seg-row pn-mode"><button type="button" class="chip ${one?'':'active'}" onclick="pnKeep();pnDraft.date='';pnSheet()">On these days</button><button type="button" class="chip ${one?'active':''}" onclick="pnKeep();pnDraft.date=pnDraft.date||todayISO();pnSheet()">One day only</button></div>
       ${one ? `<div class="card"><div class="row"><div class="row-text"><div class="row-title">Date</div></div><input type="date" class="pn-time" value="${escapeHtml(d.date)}" min="${todayISO()}" onchange="pnDraft.date=this.value"></div></div>`
         : `<div class="pn-days">${PN_DAYS.map(([k,l])=>`<button type="button" class="${(d.days||[]).includes(k)?'on':''}" aria-label="${PN_DAYNAMES[k]}" onclick="pnDay(${k})">${l}</button>`).join('')}</div>
            <div class="pn-quick"><button type="button" class="chip" onclick="pnDays([1,2,3,4,5,6,0])">Every day</button><button type="button" class="chip" onclick="pnDays([1,2,3,4,5])">Weekdays</button><button type="button" class="chip" onclick="pnDays([6,0])">Weekends</button></div>`}
-      ${pnHere() ? '' : `<p class="pn-note">Notifications aren't on for this device yet. Turn them on in Settings › Briefing & alerts.</p>`}
+      ${Object.keys(pnSubs()).length ? '' : `<p class="pn-note">No device has notifications on yet. Turn them on in Settings › Briefing & alerts.</p>`}
       ${d.id ? `<button type="button" class="btn-danger" style="width:100%;margin-top:16px" onclick="pnDelete('${d.id}')">Delete notification</button>` : ''}
     </div>`);
-  if(!d.id) setTimeout(()=>{ const t = document.getElementById('pnText'); if(t && !t.value) t.focus(); }, 250);
+  if(!d.id && !d.title) setTimeout(()=>{ const t = document.getElementById('pnTitle'); if(t) t.focus(); }, 250);
 }
-function pnDay(k){ const s = new Set(pnDraft.days||[]); s.has(k) ? s.delete(k) : s.add(k); pnDraft.days = [...s]; pnSheet(); }
-function pnDays(a){ pnDraft.days = a.slice(); pnSheet(); }
+function pnDay(k){ pnKeep(); const s = new Set(pnDraft.days||[]); s.has(k) ? s.delete(k) : s.add(k); pnDraft.days = [...s]; pnSheet(); }
+function pnDays(a){ pnKeep(); pnDraft.days = a.slice(); pnSheet(); }
 function pnSave(){
   const d = pnDraft; if(!d) return;
-  const el = document.getElementById('pnText'); if(el) d.text = el.value;
-  d.text = String(d.text||'').trim();
-  if(!d.text){ toast('Write what it should say'); return; }
+  pnKeep();
+  d.title = String(d.title||'').trim(); d.text = String(d.text||'').trim();
+  if(!d.title && !d.text){ toast('Write a heading or a message'); return; }
   if(!/^\d{2}:\d{2}$/.test(d.time||'')){ toast('Pick a time'); return; }
   if(!d.date && !(d.days||[]).length){ toast('Pick at least one day'); return; }
+  if(d.kind!=='sos'){ delete d.every; delete d.hours; }
   const L = pnList();
   if(d.id){ const i = L.findIndex(x=>x.id===d.id); if(i>-1) L[i] = d; } else { d.id = uid(); L.push(d); }
   L.sort((a,b)=>(a.time||'').localeCompare(b.time||''));
   saveState(); closeSheet(); render(); toast('Notification saved · '+pnWhen(d));
 }
 function pnDelete(id){ snap(); state.notifs = pnList().filter(x=>x.id!==id); saveState(); closeSheet(); render(); undoToast('Notification deleted'); }
+/* SOS: tap the notification, mark it done, and it stops for today */
+function pnSosSheet(id){
+  const n = pnList().find(x=>x.id===id);
+  if(!n){ toast('That SOS was deleted'); return; }
+  const done = n.doneOn===todayISO();
+  openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>🚨 SOS</h2><span></span></div>
+    <div class="sheet-body"><div class="card" style="padding:16px"><div style="font-size:18px;font-weight:700">${escapeHtml(n.title||'SOS')}</div>${n.text?`<div style="margin-top:6px;color:var(--text-2)">${escapeHtml(n.text)}</div>`:''}<div class="row-sub" style="margin-top:8px">${escapeHtml(pnWhen(n))}</div></div>
+    <button type="button" class="btn-primary" style="width:100%;margin-top:14px" onclick="pnSosDone('${id}')">${done ? 'Done today ✓ (tap to undo)' : '✓ Done. Stop notifying me'}</button>
+    <button type="button" class="btn-secondary" style="width:100%;margin-top:10px" onclick="closeSheet();pnOpen('${id}')">Edit</button></div>`);
+}
+function pnSosDone(id){
+  const n = pnList().find(x=>x.id===id); if(!n) return;
+  n.doneOn = n.doneOn===todayISO() ? '' : todayISO();
+  if(n.date && n.doneOn) n.on = false;
+  saveState(); closeSheet(); render(); try{ LifeSync.syncNow && LifeSync.syncNow(); }catch(e){}
+  toast(n.doneOn ? 'SOS done. No more notifications for it today' : 'SOS back on');
+}
+/* reminders: make a notification from a reminder */
+function pnFromReminder(id){
+  const r = (state.reminders||[]).find(x=>String(x.id)===String(id)); if(!r) return;
+  closeSheet();
+  setTimeout(()=>pnOpen(null, {title:'🔔 '+(r.title||'Reminder'), text:r.notes||'', time: r.time || '08:00', date: r.date && r.date>=todayISO() ? r.date : '', days: r.date ? [] : [1,2,3,4,5,6,0], remId: r.id}), 250);
+}
 
 /* ============ INIT ============ */
 loadState().then(()=>{
@@ -19028,6 +19129,10 @@ loadState().then(()=>{
 .pn-quick{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
 .pn-note{margin:14px 4px 0;color:var(--text-3);font-size:13.5px;}
 .pn-row .row-text{min-width:0;}
+.pn-me{font-size:11px;font-weight:700;color:var(--accent);background:color-mix(in srgb,var(--accent) 15%,transparent);border-radius:999px;padding:2px 7px;margin-left:4px;vertical-align:middle;}
+.pn-row a{color:var(--text-3);}
+.pn-ta2{resize:none;min-height:44px;font-size:15px;}
+.pn-row .row-sub br+*{display:inline;}
 .pn-seg{display:flex;gap:6px;}
 .pn-sub{padding-top:0 !important;}
 /* settings: what each one does */

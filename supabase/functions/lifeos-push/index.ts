@@ -3,14 +3,15 @@
 // (Authorization: Bearer <user access token>) with {test:true|'morning'|'gym'}.
 //
 // Built-in notifications (each switchable in pushCfg, times in NZ time):
-//   morning   05:30  briefing nudge + today's workout + a short quote       -> opens Dashboard
-//   gym       5 min before the Gym task: today's split + targets to beat    -> opens Workout
-//   tick-off  at the app's two tick-off times (17:30, 20:00) if things open -> opens the tick-off
-//   streak    19:30  perfect-day streak at risk                              -> opens the tick-off
-//   review    20:45  daily review not written yet                            -> opens today's review
-//   focus     16:00  Life / Ecom focus ends in 2 days, tomorrow, or today    -> opens Focus
-//   rem       reminders that have a time ping at that time (off by default)
-// Plus the user's own scheduled notifications (state.notifs).
+//   morning   05:30  discipline streak + today's workout with targets + a quote -> Dashboard
+//   gym       5 min before the Gym task: gym days in a row + split + targets  -> Workout
+//   tick      07:45 and 17:30 if there's anything left to tick               -> tick-off
+//   evening   20:00  tick off what's left + write the daily review           -> tick-off / review
+//   focus     16:00  Life / Ecom focus ends in 2 days, tomorrow, or today     -> Focus
+//   missed    (off by default) a routine task still unticked N min after its time
+//   rem       (off by default) reminders that have a time ping at that time
+// Custom notifications (state.notifs): normal, or SOS that repeats every N min
+// for H hours until marked done. A device in pushSubs with off:true gets nothing.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 
@@ -71,10 +72,10 @@ async function sendAll(subs: Any, n: Note) {
   let ok = 0, fail = 0;
   const payload = JSON.stringify({ title: n.title, body: n.body, tag: n.id, url: "/?go=" + encodeURIComponent(n.go) });
   for (const sub of Object.values(subs || {})) {
-    if (!sub || typeof sub !== "object" || !(sub as Any).endpoint) continue;
+    if (!sub || typeof sub !== "object" || !(sub as Any).endpoint || (sub as Any).off) continue;
     try {
-      // deno-lint-ignore no-explicit-any
-      await webpush.sendNotification(sub as any, payload, { TTL: 3600, urgency: "high" });
+      const { endpoint, keys } = sub as Any;
+      await webpush.sendNotification({ endpoint, keys }, payload, { TTL: 3600, urgency: "high" });
       ok++;
     } catch (e) {
       fail++; console.error("push failed", (e as Any).statusCode, String(e).slice(0, 200));
@@ -87,20 +88,23 @@ async function sendAll(subs: Any, n: Note) {
 async function loadDay(userId: string, date: string) {
   const r = await rows(userId, (q) => q.or(
     `key.like.lifeFocuses#%,key.like.ecommerceFocuses#%,key.eq.todaysLists#${date},key.eq.briefings,key.eq.daysOff,` +
-    `key.like.reminders#%,key.eq.workout,key.eq.quotes,key.eq.dailyReviews#${date},key.eq.checkInTimes`,
+    `key.like.reminders#%,key.eq.workout,key.eq.quotes,key.eq.dailyReviews#${date},key.eq.disciplineStreakStart`,
   ));
-  const ctx: Any = { focuses: [], items: [], list: [], rems: [], brief: "", dayOff: false, workout: null, quotes: [], reviewed: false, ci: {}, byDate: {} };
+  const ctx: Any = { focuses: [], items: [], list: [], rems: [], remDone: new Set<string>(), brief: "", dayOff: false, workout: null, quotes: [], reviewed: false, streakStart: "", byDate: {} };
   for (const row of r) {
     const v = row.value?.v, k = row.key as string;
     if (v == null) continue;
     if (k.startsWith("todaysLists#")) ctx.list = Array.isArray(v.items) ? v.items : [];
     else if (k === "briefings") ctx.brief = String(v[date] || "").trim();
     else if (k === "daysOff") ctx.dayOff = (Array.isArray(v) ? v : []).some((d: Any) => d && d.startDate && d.startDate <= date && (d.endDate || d.startDate) >= date);
-    else if (k.startsWith("reminders#")) { if (v.id && !v.done && !v.dismissed && v.date === date) ctx.rems.push(v); }
+    else if (k.startsWith("reminders#")) {
+      if (v.id && (v.done || v.dismissed)) ctx.remDone.add(String(v.id));
+      else if (v.id && v.date === date) ctx.rems.push(v);
+    }
     else if (k === "workout") ctx.workout = v;
     else if (k === "quotes") ctx.quotes = Array.isArray(v) ? v : [];
     else if (k.startsWith("dailyReviews#")) ctx.reviewed = !!v;
-    else if (k === "checkInTimes") ctx.ci = v || {};
+    else if (k === "disciplineStreakStart") ctx.streakStart = String(v || "");
     else if (k.includes("Focuses#") && Array.isArray(v.days)) {
       ctx.focuses.push({ kind: k.startsWith("life") ? "Life" : "Ecom", name: v.name || "", start: v.startDate || "", end: v.endDate || "" });
       for (const d of v.days) {
@@ -123,31 +127,21 @@ function planFor(ctx: Any, dow: number) {
   return (w.plans || []).find((p: Any) => p.id === id) || null;
 }
 
-function morningNote(ctx: Any, now: Any): Note {
-  const plan = planFor(ctx, now.dow);
-  const parts: string[] = [];
-  parts.push(ctx.brief ? "Your briefing's ready, tap to read it." : "Tap to see today's plan.");
-  if (plan) parts.push(`Workout: ${plan.name} day.`);
-  const left = ctx.items.filter((it: Any) => !it.done).length;
-  if (left) parts.push(`${left} tasks today${ctx.rems.length ? `, ${ctx.rems.length} reminder${ctx.rems.length === 1 ? "" : "s"}` : ""}.`);
-  const q = ctx.quotes.length ? ctx.quotes[(Number(now.date.replace(/-/g, "")) * 7) % ctx.quotes.length] : "Win the morning, win the day.";
-  parts.push(`"${String(q).trim()}"`);
-  return { id: "m:morning", title: "☀️ Morning briefing", body: parts.join(" "), go: "briefing" };
-}
-
-const PUSH_LINES = ["No easy sets.", "Leave nothing in the tank.", "The last rep is the one that counts.", "Earn the bulk.", "Progressive overload or it didn't happen.", "Every set to failure, clean form.", "Beat last week's you."];
-
-async function gymNote(userId: string, ctx: Any, now: Any): Promise<Note | null> {
-  const plan = planFor(ctx, now.dow);
-  if (!plan || !Array.isArray(plan.ex) || !plan.ex.length) return null;
-  const logs = (await rows(userId, (q) => q.like("key", "workoutLog#%").neq("key", "workoutLog#~order")))
-    .map((r) => r.value?.v).filter((l) => l && l.date && l.date < now.date && Array.isArray(l.ex))
+async function loadLogs(userId: string, ctx: Any) {
+  if (ctx.logs) return ctx.logs;
+  ctx.logs = (await rows(userId, (q) => q.like("key", "workoutLog#%").neq("key", "workoutLog#~order")))
+    .map((r) => r.value?.v).filter((l) => l && l.date && Array.isArray(l.ex))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  return ctx.logs;
+}
+/* weights and reps to beat for today's split, from the last time each lift was logged */
+function targetsFor(ctx: Any, plan: Any, today: string, max = 4) {
   const inc = Number(ctx.workout?.cfg?.inc) || 1.25;
-  const targets: string[] = [];
-  for (const ex of plan.ex) {
+  const out: string[] = [];
+  for (const ex of plan.ex || []) {
     let best: Any = null;
-    for (const l of logs) {
+    for (const l of ctx.logs || []) {
+      if (l.date >= today) continue;
       const e = l.ex.find((x: Any) => x.exId === ex.id || clean(x.name) === clean(ex.name));
       const sets = e && Array.isArray(e.sets) ? e.sets.filter((s: Any) => s.done && Number(s.kg) >= 0 && Number(s.r) > 0) : [];
       if (!sets.length) continue;
@@ -157,13 +151,47 @@ async function gymNote(userId: string, ctx: Any, now: Any): Promise<Note | null>
     if (!best) continue;
     const hi = Number(ex.hi) || 8, lo = Number(ex.lo) || 5, k = Number(best.kg), r = Number(best.r);
     const step = Number(ex.inc) || inc;
-    targets.push(`${clean(ex.name)} ${r >= hi ? `${kg(k + step)}kg × ${lo}` : `${kg(k)}kg × ${r + 1}`}`);
-    if (targets.length >= 4) break;
+    out.push(`${clean(ex.name)} ${r >= hi ? `${kg(k + step)}kg × ${lo}` : `${kg(k)}kg × ${r + 1}`}`);
+    if (out.length >= max) break;
   }
-  const lines = [`${plan.ex.length} lifts.`];
-  lines.push(targets.length ? `Targets: ${targets.join(", ")}.` : "Log every set so next week has numbers to beat.");
+  return out;
+}
+/* gym days in a row, counting back from yesterday (today counts once it's logged) */
+function gymStreak(ctx: Any, today: string) {
+  const days = new Set((ctx.logs || []).map((l: Any) => l.date));
+  let d = days.has(today) ? today : addDays(today, -1), n = 0;
+  while (days.has(d) && n < 1000) { n++; d = addDays(d, -1); }
+  return n;
+}
+
+async function morningNote(userId: string, ctx: Any, now: Any): Promise<Note> {
+  const plan = planFor(ctx, now.dow);
+  const lines: string[] = [];
+  const st = ctx.streakStart ? Math.max(0, daysBetween(ctx.streakStart, now.date)) : 0;
+  lines.push(st > 0 ? `🔥 ${st}-day streak. Don't stop now.` : "🔥 Day 1 of a new streak. Make it count.");
+  if (plan) {
+    await loadLogs(userId, ctx);
+    const t = targetsFor(ctx, plan, now.date, 3);
+    const names = (plan.ex || []).map((e: Any) => clean(e.name));
+    lines.push(`🏋️ ${plan.name}: ${t.length ? t.join(", ") : names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}.`);
+  }
+  const q = ctx.quotes.length ? ctx.quotes[(Number(now.date.replace(/-/g, "")) * 7) % ctx.quotes.length] : "Win the morning, win the day.";
+  lines.push(`"${String(q).trim()}"`);
+  return { id: "m:morning", title: "☀️ Morning briefing", body: lines.join("\n"), go: "briefing" };
+}
+
+const PUSH_LINES = ["No easy sets.", "Leave nothing in the tank.", "The last rep is the one that counts.", "Earn the bulk.", "Progressive overload or it didn't happen.", "Every set to failure, clean form.", "Beat last week's you."];
+
+async function gymNote(userId: string, ctx: Any, now: Any): Promise<Note | null> {
+  const plan = planFor(ctx, now.dow);
+  if (!plan || !Array.isArray(plan.ex) || !plan.ex.length) return null;
+  await loadLogs(userId, ctx);
+  const t = targetsFor(ctx, plan, now.date, 4);
+  const n = gymStreak(ctx, now.date);
+  const lines = [n ? `You've hit the gym ${n} day${n === 1 ? "" : "s"} in a row. Don't stop now.` : "Start a new gym streak today."];
+  lines.push(t.length ? `Targets: ${t.join(", ")}.` : `${plan.ex.length} lifts. Log every set so next week has numbers to beat.`);
   lines.push(PUSH_LINES[(now.dow + Number(now.date.slice(8))) % PUSH_LINES.length]);
-  return { id: "g:gym", title: `🏋️ ${plan.name} day: add a rep to everything`, body: lines.join(" "), go: "workout" };
+  return { id: "g:gym", title: `🏋️ ${plan.name} day`, body: lines.join("\n"), go: "workout" };
 }
 
 function tickNote(ctx: Any, now: Any, which: string): Note | null {
@@ -184,31 +212,15 @@ function tickNote(ctx: Any, now: Any, which: string): Note | null {
   };
 }
 
-function perfectStreak(ctx: Any, today: string) {
-  let n = 0, d = addDays(today, -1);
-  for (let i = 0; i < 400; i++) {
-    const its = ctx.byDate[d];
-    if (!its || !its.length || !its.every((it: Any) => it.done)) break;
-    n++; d = addDays(d, -1);
-  }
-  return n;
-}
-function streakNote(ctx: Any, now: Any): Note | null {
-  const left = ctx.items.filter((it: Any) => !it.done);
-  if (!ctx.items.length || !left.length) return null;
-  const n = perfectStreak(ctx, now.date);
-  const names = left.slice(0, 3).map((it: Any) => clean(it.title)).join(", ");
-  return {
-    id: "s:streak",
-    title: n ? `🔥 ${n}-day streak at risk` : "🔥 Perfect day still possible",
-    body: `${left.length} task${left.length === 1 ? "" : "s"} left today${names ? `: ${names}` : ""}${left.length > 3 ? "…" : "."} ${n ? "Tick them to keep it alive." : "Finish them to start a streak."}`,
-    go: "tickoff",
-  };
-}
-function reviewNote(ctx: Any): Note | null {
-  if (ctx.reviewed) return null;
-  const done = ctx.items.filter((it: Any) => it.done).length;
-  return { id: "v:review", title: "📝 Rate your day", body: `${done} of ${ctx.items.length} tasks done today. Take 2 minutes to write your daily review.`, go: "review" };
+function eveningNote(ctx: Any): Note | null {
+  const open = ctx.items.filter((it: Any) => !it.done && it.refId !== "sleep");
+  const list = ctx.list.filter((x: Any) => !x.done);
+  const left = open.length + list.length + ctx.rems.length;
+  if (!left && ctx.reviewed) return null;
+  const parts: string[] = [];
+  if (left) parts.push(`${left} thing${left === 1 ? "" : "s"} still to tick${open.length ? `: ${open.slice(0, 3).map((it: Any) => clean(it.title)).join(", ")}${open.length > 3 ? "…" : "."}` : "."}`);
+  if (!ctx.reviewed) parts.push("Then write your daily review.");
+  return { id: "e:evening", title: "🌙 Tick off + daily review", body: parts.join(" "), go: left ? "tickoff" : "review" };
 }
 function focusNotes(ctx: Any, now: Any): Note[] {
   const out: Note[] = [];
@@ -241,9 +253,9 @@ Deno.serve(async (req) => {
       if (error || !u?.user) return json({ error: "Sign in to sync first" }, 401);
       const subRows = await rows(u.user.id, (q) => q.eq("key", "pushSubs"));
       const subs = subRows[0]?.value?.v || {};
-      if (!Object.keys(subs).length) return json({ error: "No device is set up for notifications yet" }, 400);
+      if (!Object.values(subs).some((x: Any) => x && !x.off)) return json({ error: "No device has notifications on" }, 400);
       let n: Note = { id: "test", title: "LifeOS", body: "Test notification. You're all set ✓", go: "briefing" };
-      if (body.test === "morning") n = morningNote(await loadDay(u.user.id, now.date), now);
+      if (body.test === "morning") n = await morningNote(u.user.id, await loadDay(u.user.id, now.date), now);
       if (body.test === "gym") n = (await gymNote(u.user.id, await loadDay(u.user.id, now.date), now)) || n;
       return json(await sendAll(subs, { ...n, id: n.id + ":test" }));
     }
@@ -258,13 +270,13 @@ Deno.serve(async (req) => {
       if (body.dow != null) now.dow = Number(body.dow);
       if (body.send) {
         const subRows = await rows(String(body.user), (q) => q.eq("key", "pushSubs"));
-        const n = body.send === "gym" ? await gymNote(String(body.user), ctx, now) : morningNote(ctx, now);
+        const n = body.send === "gym" ? await gymNote(String(body.user), ctx, now) : await morningNote(String(body.user), ctx, now);
         if (!n) return json({ error: "nothing to send" }, 400);
         return json(await sendAll(subRows[0]?.value?.v || {}, { ...n, id: n.id + ":test" }));
       }
       return json({
-        now, items: ctx.items.length, morning: morningNote(ctx, now), gym: await gymNote(String(body.user), ctx, now),
-        tick: tickNote(ctx, now, "a"), streak: streakNote(ctx, now), review: reviewNote(ctx), focus: focusNotes(ctx, now),
+        now, items: ctx.items.length, morning: await morningNote(String(body.user), ctx, now), gym: await gymNote(String(body.user), ctx, now),
+        tick: tickNote(ctx, now, "1"), evening: eveningNote(ctx), focus: focusNotes(ctx, now),
       });
     }
 
@@ -281,21 +293,32 @@ Deno.serve(async (req) => {
 
     let sent = 0;
     for (const [userId, u] of users) {
-      if (!u.subs || !Object.keys(u.subs).length) continue;
+      if (!u.subs || !Object.values(u.subs).some((x: Any) => x && !x.off)) continue;
       const c: Any = u.cfg || {};
       const on = (k: string) => c[k] !== false;
       const out: Note[] = [];
 
+      const ctx = await loadDay(userId, now.date);
+
       for (const n of (u.notifs || []) as Any[]) {
-        if (!n || n.on === false || !n.id || !due(n.time)) continue;
+        if (!n || n.on === false || !n.id) continue;
         const days = Array.isArray(n.days) ? n.days : [];
         const today = n.date ? n.date === now.date : days.length ? days.includes(now.dow) : true;
-        if (today) out.push({ id: "n:" + n.id, title: String(n.title || "LifeOS"), body: String(n.text || ""), go: n.go || "briefing" });
+        if (!today) continue;
+        if (n.remId && ctx.remDone.has(String(n.remId))) continue; // its reminder is done
+        const title = String(n.title || (n.kind === "sos" ? "🚨 SOS" : "LifeOS")), text = String(n.text || "");
+        if (n.kind === "sos") {
+          if (n.doneOn === now.date) continue;
+          const start = toMins(n.time), every = Math.max(5, Number(n.every) || 15), end = start + Math.max(1, Number(n.hours) || 2) * 60;
+          if (start < 0 || now.mins < start || now.mins >= end) continue;
+          const k = Math.floor((now.mins - start) / every);
+          if (now.mins - (start + k * every) >= Math.min(every, WINDOW_MIN)) continue;
+          out.push({ id: `sos:${n.id}:${k}`, title, body: (text ? text + " " : "") + "Tap when it's done.", go: "sos:" + n.id });
+        } else if (due(n.time)) out.push({ id: "n:" + n.id, title, body: text, go: n.remId ? "reminders" : "briefing" });
       }
 
-      const ctx = await loadDay(userId, now.date);
       if (!ctx.dayOff) {
-        if (on("morning") && due(c.morningTime || "05:30")) out.push(morningNote(ctx, now));
+        if (on("morning") && due(c.morningTime || "05:30")) out.push(await morningNote(userId, ctx, now));
         if (on("gym")) {
           const g = ctx.items.find((it: Any) => it.refId === "gym" || /\bgym\b/i.test(clean(it.title)));
           const gt = g && toMins(g.time) >= 0 ? toMins(g.time) - 5 : -1;
@@ -303,14 +326,25 @@ Deno.serve(async (req) => {
             const n = await gymNote(userId, ctx, now); if (n) out.push(n);
           }
         }
-        const a = ctx.ci.a || "17:30", b = ctx.ci.b || "20:00";
-        if (on("tick") && due(a)) { const n = tickNote(ctx, now, "a"); if (n) out.push(n); }
-        if (on("tick") && due(b)) { const n = tickNote(ctx, now, "b"); if (n) out.push(n); }
-        if (on("streak") && due(c.streakTime || "19:30")) { const n = streakNote(ctx, now); if (n) out.push(n); }
-        if (on("review") && due(c.reviewTime || "20:45")) { const n = reviewNote(ctx); if (n) out.push(n); }
+        if (on("tick") && due(c.tick1 || "07:45")) { const n = tickNote(ctx, now, "1"); if (n) out.push(n); }
+        if (on("tick") && due(c.tick2 || "17:30")) { const n = tickNote(ctx, now, "2"); if (n) out.push(n); }
+        if (on("evening") && due(c.eveningTime || "20:00")) { const n = eveningNote(ctx); if (n) out.push(n); }
+        if (c.missed) {
+          const after = Math.max(5, Number(c.missedAfter) || 30);
+          const late: string[] = [];
+          for (const it of ctx.items) {
+            const t = toMins(it.time);
+            if (it.done || t < 0 || it.refId === "sleep") continue;
+            const at = t + after;
+            if (at > now.mins || now.mins - at >= WINDOW_MIN || at >= 22 * 60) continue;
+            const { error } = await sb.from("lifeos_push_sent").insert({ user_id: userId, notif_id: "u:" + it.id, slot: now.date });
+            if (!error) late.push(clean(it.title));
+          }
+          if (late.length) out.push({ id: "u:batch:" + now.mins, title: "⏰ Not ticked yet", body: late.length === 1 ? `${late[0]} was due ${after} min ago. Done it? Tick it off.` : `${late.join(", ")} still need ticking.`, go: "tickoff" });
+        }
       }
       if (on("focus") && due(c.focusTime || "16:00")) out.push(...focusNotes(ctx, now));
-      if (c.rem) for (const x of ctx.rems) if (x.time && due(x.time)) out.push({ id: "r:" + x.id, title: "🔔 Reminder", body: clean(x.title), go: "reminders" });
+      if (c.rem) for (const x of ctx.rems) if (x.time && due(x.time)) out.push({ id: "r:" + x.id, title: "🔔 " + clean(x.title), body: clean(x.notes || "Reminder"), go: "reminders" });
 
       for (const o of out) {
         const { error } = await sb.from("lifeos_push_sent").insert({ user_id: userId, notif_id: o.id, slot: now.date });
