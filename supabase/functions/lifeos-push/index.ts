@@ -15,7 +15,8 @@
 // 25 Nov: every notification is editable by holding it in the app:
 //   built-ins -> pushCfg.over[key] = {title, text, go, apps}
 //   custom    -> n.go, n.apps on the notification itself
-// {auto} in a heading/message is swapped for what LifeOS would have said.
+// Headings/messages are templates: {split}, {gymdays}, {targets}… are each note's
+// details (see the v on each note); {auto} = what LifeOS would have said.
 // Apps ride along in go as "page~appId,appId"; the app shows buttons for them.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
@@ -36,7 +37,8 @@ const json = (o: unknown, status = 200) =>
 
 // deno-lint-ignore no-explicit-any
 type Any = Record<string, any>;
-type Note = { id: string; title: string; body: string; go: string };
+type Note = { id: string; title: string; body: string; go: string; v?: Record<string, string> };
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function nzNow() {
   const p = Object.fromEntries(
@@ -64,10 +66,14 @@ function withApps(go: string, apps: unknown) {
   const a = Array.isArray(apps) ? apps.filter((x) => typeof x === "string" && x).slice(0, 6) : [];
   return a.length ? `${go}~${a.join(",")}` : go;
 }
-function fill(tpl: unknown, auto: string) {
+/* fill a template: {auto} = what LifeOS would have said, {split} etc = that note's details */
+function fill(tpl: unknown, auto: string, v: Record<string, string> = {}) {
   const t = String(tpl || "").trim();
   if (!t) return auto;
-  return t.includes("{auto}") ? t.replace(/\{auto\}/g, auto) : t;
+  const vals: Record<string, string> = { ...v, auto };
+  return t.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? String(vals[k] ?? "") : ""))
+    .split("\n").map((l) => l.replace(/[ \t]{2,}/g, " ").trim()).filter(Boolean).join("\n")
+    .replace(/\s+([.,!?])/g, "$1").replace(/,\s*([.!?,])/g, "$1").replace(/^[.,!?]\s*/, "").trim() || auto;
 }
 /* apply the user's edits for a built-in notification */
 function over(n: Note, cfg: Any): Note {
@@ -75,7 +81,8 @@ function over(n: Note, cfg: Any): Note {
   const o = key && cfg?.over && typeof cfg.over === "object" ? cfg.over[key] : null;
   if (!o || typeof o !== "object") return n;
   const go = o.go && !/^sos:/.test(n.go) ? String(o.go) : n.go;
-  return { ...n, title: fill(o.title, n.title), body: fill(o.text, n.body), go: withApps(go, o.apps) };
+  const v = n.v || {};
+  return { ...n, title: fill(o.title, n.title, v), body: fill(o.text, n.body, v), go: withApps(go, o.apps) };
 }
 
 async function config() {
@@ -198,17 +205,23 @@ function gymStreak(ctx: Any, today: string) {
 async function morningNote(userId: string, ctx: Any, now: Any): Promise<Note> {
   const plan = planFor(ctx, now.dow);
   const lines: string[] = [];
+  const v: Record<string, string> = { day: DAYS[now.dow] || "", split: "Rest", targets: "", lifts: "", workout: "" };
   const st = ctx.streakStart ? Math.max(0, daysBetween(ctx.streakStart, now.date)) : 0;
-  lines.push(st > 0 ? `🔥 ${st}-day streak. Don't stop now.` : "🔥 Day 1 of a new streak. Make it count.");
+  v.days = String(st);
+  v.streak = st > 0 ? `🔥 ${st}-day streak. Don't stop now.` : "🔥 Day 1 of a new streak. Make it count.";
+  lines.push(v.streak);
   if (plan) {
     await loadLogs(userId, ctx);
     const t = targetsFor(ctx, plan, now.date, 3);
     const names = (plan.ex || []).map((e: Any) => clean(e.name));
-    lines.push(`🏋️ ${plan.name}: ${t.length ? t.join(", ") : names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}.`);
+    v.workout = `🏋️ ${plan.name}: ${t.length ? t.join(", ") : names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}.`;
+    v.split = String(plan.name || ""); v.targets = t.join(", "); v.lifts = names.join(", ");
+    lines.push(v.workout);
   }
   const q = ctx.quotes.length ? ctx.quotes[(Number(now.date.replace(/-/g, "")) * 7) % ctx.quotes.length] : "Win the morning, win the day.";
-  lines.push(`"${String(q).trim()}"`);
-  return { id: "m:morning", title: "☀️ Morning briefing", body: lines.join("\n"), go: "briefing" };
+  v.quote = `"${String(q).trim()}"`;
+  lines.push(v.quote);
+  return { id: "m:morning", title: "☀️ Morning briefing", body: lines.join("\n"), go: "briefing", v };
 }
 
 const PUSH_LINES = ["No easy sets.", "Leave nothing in the tank.", "The last rep is the one that counts.", "Earn the bulk.", "Progressive overload or it didn't happen.", "Every set to failure, clean form.", "Beat last week's you."];
@@ -219,10 +232,16 @@ async function gymNote(userId: string, ctx: Any, now: Any): Promise<Note | null>
   await loadLogs(userId, ctx);
   const t = targetsFor(ctx, plan, now.date, 4);
   const n = gymStreak(ctx, now.date);
-  const lines = [n ? `You've hit the gym ${n} day${n === 1 ? "" : "s"} in a row. Don't stop now.` : "Start a new gym streak today."];
-  lines.push(t.length ? `Targets: ${t.join(", ")}.` : `${plan.ex.length} lifts. Log every set so next week has numbers to beat.`);
-  lines.push(PUSH_LINES[(now.dow + Number(now.date.slice(8))) % PUSH_LINES.length]);
-  return { id: "g:gym", title: `🏋️ ${plan.name} day`, body: lines.join("\n"), go: "workout" };
+  const st = ctx.streakStart ? Math.max(0, daysBetween(ctx.streakStart, now.date)) : 0;
+  const v: Record<string, string> = {
+    day: DAYS[now.dow] || "", split: String(plan.name || ""), gymdays: String(n), count: String(plan.ex.length),
+    gymstreak: n ? `You've hit the gym ${n} day${n === 1 ? "" : "s"} in a row. Don't stop now.` : "Start a new gym streak today.",
+    targets: t.length ? `Targets: ${t.join(", ")}.` : `${plan.ex.length} lifts. Log every set so next week has numbers to beat.`,
+    lifts: plan.ex.map((e: Any) => clean(e.name)).join(", "),
+    push: PUSH_LINES[(now.dow + Number(now.date.slice(8))) % PUSH_LINES.length],
+    streak: st > 0 ? `🔥 ${st}-day streak. Don't stop now.` : "🔥 Day 1 of a new streak. Make it count.",
+  };
+  return { id: "g:gym", title: `🏋️ ${plan.name} day`, body: [v.gymstreak, v.targets, v.push].join("\n"), go: "workout", v };
 }
 
 function tickNote(ctx: Any, now: Any, which: string): Note | null {
@@ -236,14 +255,15 @@ function tickNote(ctx: Any, now: Any, which: string): Note | null {
   if (list.length) bits.push(`${list.length} on Today's List`);
   if (rems.length) bits.push(`${rems.length} reminder${rems.length === 1 ? "" : "s"}`);
   const names = open.slice(0, 3).map((it: Any) => clean(it.title)).join(", ");
+  const v = { day: DAYS[now.dow] || "", count: `${total} thing${total === 1 ? "" : "s"}`, breakdown: bits.join(", "), first: names ? `Starting with ${names}.` : "" };
   return {
     id: "t:" + which, title: "✅ Tick off LifeOS",
     body: `You've got ${total} thing${total === 1 ? "" : "s"} to tick: ${bits.join(", ")}.${names ? ` Starting with ${names}.` : ""}`,
-    go: "tickoff",
+    go: "tickoff", v,
   };
 }
 
-function eveningNote(ctx: Any): Note | null {
+function eveningNote(ctx: Any, now?: Any): Note | null {
   const open = ctx.items.filter((it: Any) => !it.done && it.refId !== "sleep");
   const list = ctx.list.filter((x: Any) => !x.done);
   const left = open.length + list.length + ctx.rems.length;
@@ -251,7 +271,8 @@ function eveningNote(ctx: Any): Note | null {
   const parts: string[] = [];
   if (left) parts.push(`${left} thing${left === 1 ? "" : "s"} still to tick${open.length ? `: ${open.slice(0, 3).map((it: Any) => clean(it.title)).join(", ")}${open.length > 3 ? "…" : "."}` : "."}`);
   if (!ctx.reviewed) parts.push("Then write your daily review.");
-  return { id: "e:evening", title: "🌙 Tick off + daily review", body: parts.join(" "), go: left ? "tickoff" : "review" };
+  const v = { day: now ? DAYS[now.dow] || "" : "", left: left ? parts[0] : "", count: `${left} thing${left === 1 ? "" : "s"}`, review: ctx.reviewed ? "" : "Then write your daily review." };
+  return { id: "e:evening", title: "🌙 Tick off + daily review", body: parts.join(" "), go: left ? "tickoff" : "review", v };
 }
 function focusNotes(ctx: Any, now: Any): Note[] {
   const out: Note[] = [];
@@ -264,6 +285,7 @@ function focusNotes(ctx: Any, now: Any): Note[] {
       id: `f:${f.kind}:${f.end}:${left}`, title: `🎯 ${f.kind} Focus ${when}`,
       body: `"${clean(f.name)}" ${when}. Set up your next ${f.kind === "Ecom" ? "Ecommerce" : "Life"} Focus so there's no gap.`,
       go: f.kind === "Ecom" ? "ecom" : "life",
+      v: { day: DAYS[now.dow] || "", kind: f.kind, name: clean(f.name), when },
     });
   }
   return out;
@@ -300,12 +322,17 @@ Deno.serve(async (req) => {
       const ctx = k === "true" ? null : await loadDay(u.user.id, now.date);
       if (ctx) {
         if (k === "morning") n = await morningNote(u.user.id, ctx, now);
-        else if (k === "gym") n = (await gymNote(u.user.id, ctx, now)) || { id: "g:gym", title: "🏋️ Gym day", body: "No split set for today, so this is a sample.", go: "workout" };
-        else if (k === "tick") n = tickNote(ctx, now, "x") || { id: "t:x", title: "✅ Tick off LifeOS", body: "Nothing left to tick right now, so this is a sample.", go: "tickoff" };
-        else if (k === "evening") n = eveningNote(ctx) || { id: "e:evening", title: "🌙 Tick off + daily review", body: "All done today, so this is a sample.", go: "review" };
-        else if (k === "focus") n = focusNotes(ctx, now)[0] || { id: "f:x", title: "🎯 Life Focus ends tomorrow", body: "Sample: set up your next Life Focus so there's no gap.", go: "life" };
-        else if (k === "missed") n = { id: "u:x", title: "⏰ Not ticked yet", body: "Sample: a routine task was due 30 min ago. Done it? Tick it off.", go: "tickoff" };
-        else if (k === "rem") n = { id: "r:x", title: "🔔 Reminder", body: "Sample reminder", go: "reminders" };
+        else if (k === "gym") n = (await gymNote(u.user.id, ctx, now)) || { id: "g:gym", title: "🏋️ Gym day", body: "No split set for today, so this is a sample.", go: "workout",
+          v: { day: DAYS[now.dow] || "", split: "Rest", gymdays: "0", count: "0", gymstreak: "No split set for today.", targets: "", lifts: "", push: PUSH_LINES[0], streak: "" } };
+        else if (k === "tick") n = tickNote(ctx, now, "x") || { id: "t:x", title: "✅ Tick off LifeOS", body: "Nothing left to tick right now, so this is a sample.", go: "tickoff",
+          v: { day: DAYS[now.dow] || "", count: "0 things", breakdown: "nothing left", first: "" } };
+        else if (k === "evening") n = eveningNote(ctx, now) || { id: "e:evening", title: "🌙 Tick off + daily review", body: "All done today, so this is a sample.", go: "review",
+          v: { day: DAYS[now.dow] || "", left: "All ticked.", count: "0 things", review: "" } };
+        else if (k === "focus") n = focusNotes(ctx, now)[0] || { id: "f:x", title: "🎯 Life Focus ends tomorrow", body: "Sample: set up your next Life Focus so there's no gap.", go: "life",
+          v: { day: DAYS[now.dow] || "", kind: "Life", name: "Sample Focus", when: "ends tomorrow" } };
+        else if (k === "missed") n = { id: "u:x", title: "⏰ Not ticked yet", body: "Sample: a routine task was due 30 min ago. Done it? Tick it off.", go: "tickoff",
+          v: { day: DAYS[now.dow] || "", late: "Sample: a routine task was due 30 min ago. Done it? Tick it off.", tasks: "Sample task", after: "30" } };
+        else if (k === "rem") n = { id: "r:x", title: "🔔 Reminder", body: "Sample reminder", go: "reminders", v: { day: DAYS[now.dow] || "", title: "Sample reminder", notes: "" } };
         n = over(n, ucfg);
       }
       return json(await sendTwice(subs, { ...n, id: n.id + ":test" }));
@@ -327,7 +354,7 @@ Deno.serve(async (req) => {
       }
       return json({
         now, items: ctx.items.length, morning: await morningNote(String(body.user), ctx, now), gym: await gymNote(String(body.user), ctx, now),
-        tick: tickNote(ctx, now, "1"), evening: eveningNote(ctx), focus: focusNotes(ctx, now),
+        tick: tickNote(ctx, now, "1"), evening: eveningNote(ctx, now), focus: focusNotes(ctx, now),
       });
     }
 
@@ -379,7 +406,7 @@ Deno.serve(async (req) => {
         }
         if (on("tick") && due(c.tick1 || "07:45")) { const n = tickNote(ctx, now, "1"); if (n) out.push(n); }
         if (on("tick") && due(c.tick2 || "17:30")) { const n = tickNote(ctx, now, "2"); if (n) out.push(n); }
-        if (on("evening") && due(c.eveningTime || "20:00")) { const n = eveningNote(ctx); if (n) out.push(n); }
+        if (on("evening") && due(c.eveningTime || "20:00")) { const n = eveningNote(ctx, now); if (n) out.push(n); }
         if (c.missed) {
           const after = Math.max(5, Number(c.missedAfter) || 30);
           const late: string[] = [];
@@ -391,11 +418,14 @@ Deno.serve(async (req) => {
             const { error } = await sb.from("lifeos_push_sent").insert({ user_id: userId, notif_id: "u:" + it.id, slot: now.date });
             if (!error) late.push(clean(it.title));
           }
-          if (late.length) out.push({ id: "u:batch:" + now.mins, title: "⏰ Not ticked yet", body: late.length === 1 ? `${late[0]} was due ${after} min ago. Done it? Tick it off.` : `${late.join(", ")} still need ticking.`, go: "tickoff" });
+          if (late.length) {
+            const body = late.length === 1 ? `${late[0]} was due ${after} min ago. Done it? Tick it off.` : `${late.join(", ")} still need ticking.`;
+            out.push({ id: "u:batch:" + now.mins, title: "⏰ Not ticked yet", body, go: "tickoff", v: { day: DAYS[now.dow] || "", late: body, tasks: late.join(", "), after: String(after) } });
+          }
         }
       }
       if (on("focus") && due(c.focusTime || "16:00")) out.push(...focusNotes(ctx, now));
-      if (c.rem) for (const x of ctx.rems) if (x.time && due(x.time)) out.push({ id: "r:" + x.id, title: "🔔 " + clean(x.title), body: clean(x.notes || "Reminder"), go: "reminders" });
+      if (c.rem) for (const x of ctx.rems) if (x.time && due(x.time)) out.push({ id: "r:" + x.id, title: "🔔 " + clean(x.title), body: clean(x.notes || "Reminder"), go: "reminders", v: { day: DAYS[now.dow] || "", title: clean(x.title), notes: clean(x.notes || "") } });
 
       for (let o of out) {
         o = over(o, c);

@@ -19621,6 +19621,21 @@ function apUseShortcut(){
 #pnAppsBar .rx-row{margin:0;}
 @keyframes pnBarIn{from{opacity:0;transform:translateY(24px) scale(.97);}to{opacity:1;transform:none;}}
 @keyframes pnBarOut{to{opacity:0;transform:translateY(16px) scale(.98);}}
+.pn-prev{display:flex;gap:11px;padding:12px 14px;border-radius:22px;border:1px solid color-mix(in srgb,var(--text) 10%,transparent);
+  background:color-mix(in srgb,var(--card) 70%,transparent);backdrop-filter:blur(24px) saturate(170%);-webkit-backdrop-filter:blur(24px) saturate(170%);box-shadow:0 8px 28px rgba(0,0,0,.16);}
+.pn-prev-ic{flex:0 0 38px;height:38px;border-radius:10px;display:grid;place-items:center;font-weight:800;color:var(--accent-ink);background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#000));}
+.pn-prev-b{min-width:0;flex:1;}
+.pn-prev-top{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-3);letter-spacing:.03em;margin-bottom:2px;}
+.pn-prev-t{font-weight:700;font-size:15px;line-height:1.45;}
+.pn-prev-x{font-size:14.5px;line-height:1.55;color:var(--text-2);}
+.pn-tok{border:0;font:inherit;font-weight:600;font-size:.92em;color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent);border-radius:8px;padding:1px 7px;margin:1px 0;cursor:pointer;transition:transform .15s,background .15s;}
+.pn-tok:active{transform:scale(.95);}
+.pn-tok.on{color:var(--accent-ink);background:var(--accent);}
+.pn-tokpick{margin-top:10px;padding:12px;border-radius:18px;background:var(--fill);animation:pnBarIn .28s cubic-bezier(.32,.72,0,1);}
+.pn-tokpick-h{display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;color:var(--text-2);margin-bottom:8px;}
+.pn-tokpick .pab-x{border:0;background:var(--card);color:var(--text-2);width:26px;height:26px;border-radius:50%;font-size:16px;cursor:pointer;}
+.pn-tokpick .chip-row{flex-wrap:wrap;gap:6px;}
+.chip.pn-tok-rm{color:var(--red);}
 </style>
 <script id="lifeos-nov25">
 /* ============ 25 Nov: HOLD ANY NOTIFICATION TO EDIT IT ============
@@ -19722,23 +19737,114 @@ function pnPickApply(d, k, v){
 
 /* ---- edit a built-in notification ---- */
 let pnEd = null;
+/* 25 Nov (2): the heading and message are templates. Details like {split} show as
+   pills in a live preview; tap one to swap it for another detail or remove it,
+   or tap a detail below to add it where the cursor is. The push function fills
+   them in with today's real numbers when it sends. */
+const PN_DAY = ['day','Weekday','Wednesday'];
+const PN_VARS = {
+  morning:{title:'☀️ Morning briefing', text:'{streak}\n{workout}\n{quote}', vars:[
+    ['streak','Streak line','🔥 70-day streak. Don\'t stop now.'], ['days','Streak days','70'],
+    ['workout','Workout + targets','🏋️ Push: Bench 82.5kg × 6, Incline 30kg × 7'], ['split','Today\'s split','Push'],
+    ['targets','Targets','Bench 82.5kg × 6, Incline 30kg × 7'], ['lifts','Exercise names','Bench, Incline DB, Dips'],
+    ['quote','Quote','"Win the morning, win the day."'], PN_DAY]},
+  gym:{title:'🏋️ {split} day', text:'{gymstreak}\n{targets}\n{push}', vars:[
+    ['split','Today\'s split','Push'], ['gymdays','Gym days in a row','70'],
+    ['gymstreak','Gym streak line','You\'ve hit the gym 70 days in a row. Don\'t stop now.'],
+    ['targets','Targets line','Targets: Bench 82.5kg × 6, Incline 30kg × 7.'], ['lifts','Exercise names','Bench, Incline DB, Dips'],
+    ['count','Number of lifts','7'], ['push','Push line','No easy sets.'], ['streak','Discipline streak line','🔥 70-day streak. Don\'t stop now.'], PN_DAY]},
+  tick:{title:'✅ Tick off LifeOS', text:'You\'ve got {count} to tick: {breakdown}. {first}', vars:[
+    ['count','How many','5 things'], ['breakdown','Breakdown','3 routine, 2 on Today\'s List'],
+    ['first','First few tasks','Starting with Read, Stretch.'], PN_DAY]},
+  evening:{title:'🌙 Tick off + daily review', text:'{left} {review}', vars:[
+    ['left','What\'s left','3 things still to tick: Read, Stretch.'], ['count','How many','3 things'],
+    ['review','Review nudge','Then write your daily review.'], PN_DAY]},
+  focus:{title:'🎯 {kind} Focus {when}', text:'"{name}" {when}. Set up your next {kind} Focus so there\'s no gap.', vars:[
+    ['kind','Life or Ecom','Life'], ['name','Focus name','Get shredded'], ['when','When it ends','ends tomorrow'], PN_DAY]},
+  missed:{title:'⏰ Not ticked yet', text:'{late}', vars:[
+    ['late','Late message','Read was due 30 min ago. Done it? Tick it off.'], ['tasks','Late tasks','Read'], ['after','Minutes late','30'], PN_DAY]},
+  rem:{title:'🔔 {title}', text:'{notes}', vars:[['title','Reminder name','Call Mum'], ['notes','Reminder notes','Reminder'], PN_DAY]}
+};
+function pnVar(key, k){ if(k==='auto') return ['auto','Full automatic text','…']; return (PN_VARS[key].vars||[]).find(v=>v[0]===k) || null; }
 function pnEdOpen(key){
-  const K = PN_KEYS[key]; if(!K) return;
+  const K = PN_KEYS[key], V = PN_VARS[key]; if(!K || !V) return;
   const o = pnOver(key) || {};
-  pnEd = {key, title:o.title||'', text:o.text||'', go:o.go||'', apps:Array.isArray(o.apps)?o.apps.slice():[]};
+  pnEd = {key, title:o.title||V.title, text:o.text||V.text, go:o.go||'', apps:Array.isArray(o.apps)?o.apps.slice():[], pick:null, focus:'text', sel:null};
   pnEdSheet();
 }
 function pnEdKeep(){ const t = document.getElementById('pnEdTitle'), x = document.getElementById('pnEdText'); if(t) pnEd.title = t.value; if(x) pnEd.text = x.value; }
 function pnEdPick(k, v){ pnEdKeep(); pnPickApply(pnEd, k, v); const b = document.getElementById('pnPick'); if(b) b.outerHTML = pnPickHtml(pnEd, 'pnEdPick', {autoLabel: PN_KEYS[pnEd.key].goAuto || pnGoName(PN_KEYS[pnEd.key].go)}); }
+/* template -> preview html with tappable pills */
+function pnTplHtml(tpl, f){
+  const key = pnEd.key; let i = 0, out = '', last = 0;
+  const s = String(tpl||''), re = /\{(\w+)\}/g; let m;
+  while((m = re.exec(s))){
+    out += escapeHtml(s.slice(last, m.index));
+    const v = pnVar(key, m[1]), n = i++;
+    const on = pnEd.pick && pnEd.pick.f===f && pnEd.pick.i===n;
+    out += v ? `<button type="button" class="pn-tok ${on?'on':''}" onclick="pnTokTap('${f}',${n})">${escapeHtml(v[1])}</button>` : escapeHtml(m[0]);
+    last = re.lastIndex;
+  }
+  out += escapeHtml(s.slice(last));
+  return out.replace(/\n/g, '<br>');
+}
+function pnEdPrevHtml(){
+  const d = pnEd, V = PN_VARS[d.key], p = d.pick;
+  let picker = '';
+  if(p){
+    const cur = pnTokAt(p.f, p.i), cv = cur && pnVar(d.key, cur);
+    picker = `<div class="pn-tokpick"><div class="pn-tokpick-h">${cv ? 'Swap “'+escapeHtml(cv[1])+'” for' : 'Pick a detail'}<button type="button" class="pab-x" aria-label="Close" onclick="pnTokTap(null)">×</button></div>
+      <div class="chip-row">${V.vars.map(v=>`<button type="button" class="chip ${v[0]===cur?'active':''}" onclick="pnTokSwap('${v[0]}')">${escapeHtml(v[1])}</button>`).join('')}
+      <button type="button" class="chip pn-tok-rm" onclick="pnTokSwap('')">Remove</button></div>
+      ${cv ? `<p class="pn-ed-hint" style="margin:8px 0 0">Shows like: ${escapeHtml(cv[2])}</p>` : ''}</div>`;
+  }
+  return `<div class="pn-prev"><div class="pn-prev-ic">L</div><div class="pn-prev-b"><div class="pn-prev-top"><span>LIFEOS</span><span>now</span></div>
+      <div class="pn-prev-t">${pnTplHtml(d.title,'title') || '&nbsp;'}</div><div class="pn-prev-x">${pnTplHtml(d.text,'text') || '&nbsp;'}</div></div></div>${picker}`;
+}
+function pnEdRefresh(){ const el = document.getElementById('pnEdPrev'); if(el) el.innerHTML = pnEdPrevHtml(); }
+function pnTokAt(f, n){ const all = [...String(pnEd[f]||'').matchAll(/\{(\w+)\}/g)]; return all[n] ? all[n][1] : null; }
+function pnTokTap(f, n){
+  pnEdKeep();
+  pnEd.pick = f==null || (pnEd.pick && pnEd.pick.f===f && pnEd.pick.i===n) ? null : {f, i:n};
+  pnEdRefresh();
+}
+function pnTokSwap(k){
+  const p = pnEd.pick; if(!p) return;
+  let n = -1;
+  pnEd[p.f] = String(pnEd[p.f]||'').replace(/\{(\w+)\}/g, (m)=>(++n===p.i ? (k ? '{'+k+'}' : '') : m)).replace(/[ \t]{2,}/g,' ');
+  if(!k) pnEd.pick = null;
+  const el = document.getElementById(p.f==='title' ? 'pnEdTitle' : 'pnEdText'); if(el) el.value = pnEd[p.f];
+  pnEdRefresh();
+}
+function pnEdFocus(f, el){ pnEd.focus = f; pnEd.sel = [el.selectionStart, el.selectionEnd]; }
+function pnEdInput(f, el){ pnEd[f] = el.value; pnEdFocus(f, el); pnEd.pick = null; pnEdRefresh(); }
+function pnEdAdd(k){
+  pnEdKeep();
+  const f = pnEd.focus || 'text', s = String(pnEd[f]||''), tok = '{'+k+'}';
+  const at = pnEd.sel && pnEd.sel[0] != null ? pnEd.sel[0] : s.length, to = pnEd.sel && pnEd.sel[1] != null ? pnEd.sel[1] : at;
+  const pre = s.slice(0, at), post = s.slice(to);
+  const add = (pre && !/[\s(“"]$/.test(pre) ? ' ' : '') + tok + (post && !/^[\s.,!?)”"]/.test(post) ? ' ' : '');
+  pnEd[f] = pre + add + post;
+  const pos = (pre + add).length; pnEd.sel = [pos, pos];
+  const el = document.getElementById(f==='title' ? 'pnEdTitle' : 'pnEdText'); if(el){ el.value = pnEd[f]; }
+  pnEdRefresh();
+}
+function pnEdDefault(){ const V = PN_VARS[pnEd.key]; pnEd.title = V.title; pnEd.text = V.text; pnEd.pick = null;
+  const t = document.getElementById('pnEdTitle'), x = document.getElementById('pnEdText'); if(t) t.value = V.title; if(x) x.value = V.text; pnEdRefresh(); }
 function pnEdSheet(){
-  const d = pnEd, K = PN_KEYS[d.key], ed = pnIsEdited(pnOver(d.key));
+  const d = pnEd, K = PN_KEYS[d.key], V = PN_VARS[d.key], ed = pnIsEdited(pnOver(d.key));
   openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Cancel</button><h2>${escapeHtml(K.name.replace(/^\S+\s/,''))}</h2><button class="sheet-btn bold" onclick="pnEdSave()">Save</button></div>
     <div class="sheet-body">
-      <div class="card">
-        <div class="row"><div class="row-text" style="width:100%"><div class="row-sub">Heading (top line)</div><input id="pnEdTitle" class="pn-in" placeholder="${escapeHtml(K.title)}" value="${escapeHtml(d.title)}" oninput="pnEd.title=this.value"></div></div>
-        <div class="row"><div class="row-text" style="width:100%"><div class="row-sub">Message (below it)</div><textarea id="pnEdText" class="pn-in pn-ta2" rows="3" placeholder="Automatic: ${escapeHtml(K.auto)}" oninput="pnEd.text=this.value">${escapeHtml(d.text)}</textarea></div></div>
+      <div id="pnEdPrev">${pnEdPrevHtml()}</div>
+      <p class="pn-ed-hint" style="margin-top:10px">Tap a highlighted detail to swap it or remove it.</p>
+      <div class="card" style="margin-top:14px">
+        <div class="row"><div class="row-text" style="width:100%"><div class="row-sub">Heading (top line)</div><input id="pnEdTitle" class="pn-in" value="${escapeHtml(d.title)}" onfocus="pnEdFocus('title',this)" onclick="pnEdFocus('title',this)" onkeyup="pnEdFocus('title',this)" oninput="pnEdInput('title',this)"></div></div>
+        <div class="row"><div class="row-text" style="width:100%"><div class="row-sub">Message (below it)</div><textarea id="pnEdText" class="pn-in pn-ta2" rows="3" onfocus="pnEdFocus('text',this)" onclick="pnEdFocus('text',this)" onkeyup="pnEdFocus('text',this)" oninput="pnEdInput('text',this)">${escapeHtml(d.text)}</textarea></div></div>
       </div>
-      <p class="pn-ed-hint">Leave either blank to keep the automatic one. Type <b>{auto}</b> to keep LifeOS's live details inside your own words, e.g. <i>Let's go. {auto}</i></p>
+      <div class="pn-ed-sec"><div class="section-label" style="padding-left:0">Add a detail</div>
+        <div class="chip-row">${V.vars.map(v=>`<button type="button" class="chip" onpointerdown="event.preventDefault()" onclick="pnEdAdd('${v[0]}')">+ ${escapeHtml(v[1])}</button>`).join('')}</div>
+        <p class="pn-ed-hint">Goes where your cursor is in the heading or message. LifeOS fills in today's real numbers when it sends. <a href="#" onclick="event.preventDefault();pnEdDefault()" style="color:var(--accent)">Start from the default</a></p>
+      </div>
       ${pnPickHtml(d, 'pnEdPick', {autoLabel: K.goAuto || pnGoName(K.go)})}
       <div class="pn-ed-btns">
         ${Object.keys(pnSubs()).length ? `<button type="button" class="btn-secondary" style="width:100%" onclick="pnEdTest()">Send a test with these changes</button>` : ''}
@@ -19747,9 +19853,10 @@ function pnEdSheet(){
     </div>`);
 }
 function pnEdClean(d){
-  const o = {};
-  if(String(d.title||'').trim()) o.title = d.title.trim();
-  if(String(d.text||'').trim()) o.text = d.text.trim();
+  const o = {}, V = PN_VARS[d.key] || {};
+  const t = String(d.title||'').trim(), x = String(d.text||'').trim();
+  if(t && t !== V.title) o.title = t;
+  if(x && x !== V.text) o.text = x;
   if(d.go) o.go = d.go;
   if((d.apps||[]).length) o.apps = d.apps.slice();
   return o;
