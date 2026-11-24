@@ -18146,7 +18146,8 @@ function rtInsideSettingHtml(){
   return `<div class="section-label">Open routine tasks with</div><div class="card">${rtOpenModeHtml()}</div>
   <div class="section-label">Routine design</div><div class="card">
     ${setToggleRow('Show what\'s in each task', rtInsideOn() ? 'On. Each routine task shows its note, steps and what still needs logging right on the Dashboard. Hold a task to see it bigger' : 'Off. Tasks show just their name. Hold one to see what\'s inside', rtInsideOn(), 'rtToggleInside()')}
-  </div>`;
+  </div>
+  ${tickAllSettingHtml()}`;
 }
 function rtInsideHtml(it, date){
   try{
@@ -18365,6 +18366,310 @@ function rpDelete(id){
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', hook); else setTimeout(hook, 0);
 })();
 
+
+/* ================================================================
+   24 Nov 2026 additions
+   1. Hold a task: tick it off (and its steps, checklist and tick-box
+      checks) right inside the held card, without opening the task. When
+      the card closes it shrinks back into the task it came from.
+   2. Settings › Routine & tasks › "Tick everything inside a task": ticking
+      a task anywhere also ticks everything in it. Unticking undoes only
+      what that tick did.
+   3. Every setting gets a short line saying what it does.
+   ================================================================ */
+
+/* ---------- 2. Tick everything inside ---------- */
+function tickAllOn(){ return !!(state && state.tickAllInside); }
+function tickAllToggle(){
+  state.tickAllInside = !tickAllOn(); saveState(); render();
+  toast(tickAllOn() ? 'Ticking a task now ticks everything in it' : 'Ticking a task only ticks the task');
+}
+function taAuto(it, date){
+  if(!it) return;
+  if(it.type==='checklist'){
+    const ids = (it.checklist||[]).filter(c=>c && !c.done).map(c=>{ c.done = true; return c.id; });
+    if(ids.length) it.ciAuto = {cl:ids, req:[], steps:[], ms:[], snap:false}; else delete it.ciAuto;
+    return;
+  }
+  ciAutoTickReqs(it, date);
+}
+function taUndo(it, date){
+  const a = it && it.ciAuto; if(!a) return;
+  if(a.cl && Array.isArray(it.checklist)) it.checklist.forEach(c=>{ if(c && a.cl.indexOf(c.id)>-1) c.done = false; });
+  a.req = a.req||[]; a.steps = a.steps||[]; a.ms = a.ms||[];
+  ciUndoAutoReqs(it, date);
+}
+function tickAllSettingHtml(){
+  return `<div class="section-label">Ticking tasks</div><div class="card">
+    ${setToggleRow('Tick everything inside a task', tickAllOn()
+      ? 'On. Ticking a task also ticks its steps, checklist and tick-box checks. Untick it and only what that tick did goes back'
+      : 'Off. Ticking a task only ticks the task. Its steps and checks stay as you left them', tickAllOn(), 'tickAllToggle()')}
+    <div class="row"><div class="row-sub">Times, numbers, timers and written logs still need logging. Tick-offs have their own switch in Settings › Tick-off.</div></div>
+  </div>`;
+}
+
+/* ---------- 1. Hold card you can tick in ---------- */
+let pkCur = null;
+function peekTask(focusId, date, itemId){
+  const it = findFocusItem(focusId, date, itemId); if(!it) return;
+  pkCur = {f:focusId, d:date, i:itemId, key:tileKey(date, itemId), done:!!it.done};
+  pkOpen(pkTaskHtml(it));
+  const b = document.getElementById('pkBd'); if(b) b.__pk = pkCur;
+}
+function pkLi(on, title, act, extra){
+  return `<li class="${on?'on':''} ${act?'pk-tap':''}" ${act?`onclick="${act}"`:''}><span class="pk-c ${on?'on':''}">${on?'✓':''}</span><span class="pk-tx"><span>${escapeHtml(plainTitle(title||''))}</span>${extra?`<small class="pk-x">${extra}</small>`:''}</span></li>`;
+}
+function pkTaskHtml(it){
+  const c = pkCur, d = c.d, a = `'${c.f}','${c.d}','${c.i}'`;
+  let h = '';
+  if(it.note && String(it.note).trim()) h += `<div class="pk-n">${escapeHtml(String(it.note).trim())}</div>`;
+  let toLog = false;
+  if(it.type==='checklist' && Array.isArray(it.checklist) && it.checklist.length){
+    h += `<div class="pk-h">Checklist · ${it.checklist.filter(x=>x.done).length} of ${it.checklist.length}</div><ul class="pk-l">`
+      + it.checklist.map(x=>pkLi(!!x.done, x.title||x.text, `pkStep('cl','${x.id}')`)).join('') + `</ul>`;
+  } else {
+    const steps = taskSteps(it);
+    if(steps.length){
+      h += `<div class="pk-h">Steps · ${steps.filter(x=>x.done).length} of ${steps.length}</div><ul class="pk-l">`
+        + steps.map((x,k)=>(x.group?`<li class="pk-g">${escapeHtml(x.group)}</li>`:'')+pkLi(!!x.done, x.title, `pkStep('st',${k})`)).join('') + `</ul>`;
+    }
+    const st = reqStatus(it, d);
+    const reqs = st ? st.rows.filter(r=>r.type!=='steps' || !r.hasSteps) : [];
+    if(reqs.length){
+      const q = it.req||{};
+      h += `<div class="pk-h">Checks</div><ul class="pk-l">` + reqs.map(r=>{
+        const tickable = r.type==='check' || r.type==='steps';
+        const v = q[r.key]!=null ? String(q[r.key]) : '';
+        let extra = r.optional ? 'optional' : '';
+        if(r.type==='time') extra = `<input class="pk-in" type="time" value="${escapeHtml(v)}" aria-label="${escapeHtml(r.label||'')}" onclick="event.stopPropagation()" onchange="pkLog('${r.key}',this.value)">`;
+        else if(r.type==='number') extra = `<label class="pk-in-l"><input class="pk-in" type="number" inputmode="decimal" min="0" step="any" value="${escapeHtml(v)}" placeholder="0" aria-label="${escapeHtml(r.label||'')}" onclick="event.stopPropagation()" onchange="pkLog('${r.key}',this.value===''?'':Math.max(0,Number(this.value)||0))"><span>${escapeHtml(r.detail||'')}</span></label>`;
+        else if(r.type==='text') extra = `<textarea class="pk-in pk-ta" rows="2" placeholder="Write it here" aria-label="${escapeHtml(r.label||'')}" onclick="event.stopPropagation()" onchange="pkLog('${r.key}',this.value.trim())">${escapeHtml(v)}</textarea>`;
+        else if(!tickable){ if(!r.ok) toLog = true; extra = escapeHtml(r.detail||''); }
+        else if(extra) extra = escapeHtml(extra);
+        return pkLi(!!r.ok, r.label||r.short||'', tickable ? `pkStep('rq','${r.key}')` : '', extra);
+      }).join('') + `</ul>`;
+    }
+  }
+  if(it.refId==='skilllearning' && it.skillId){ const sk = (state.skills||[]).find(x=>x.id===it.skillId); if(sk) h += `<div class="pk-h">Skill</div><div class="pk-e" style="color:var(--text)">${escapeHtml(sk.name)}</div>`; }
+  if(!h) h = `<div class="pk-e">Nothing else in this task. No note, steps or checks.</div>`;
+  const pk = photoKey(d, it.refId);
+  const safeT = String(plainTitle(it.title||'')).replace(/['"\\]/g,'');
+  const kind = it.category==='ecommerce' ? 'Ecommerce task' : 'Routine task';
+  return `<div class="pk-top"><div class="pk-tt">${pkHead(kind, plainTitle(it.title||''), pkRoutineMeta(it))}</div>
+      <button type="button" class="pk-tick ${it.done?'on':''}" onclick="pkTick()" aria-label="${it.done?'Ticked. Tap to undo':'Tick it off'}">${it.done?CHECK_SVG:''}</button></div>
+    ${c.msg ? `<div class="pk-msg">${escapeHtml(c.msg)}</div>` : ''}
+    ${h}
+    <div class="pk-a">
+      <button type="button" onclick="pkClose();cpCopy('rt',${a})">Copy</button>
+      <button type="button" onclick="pkClose();photoTap('${pk}','${safeT}')">${photoHas(pk) ? 'Photo' : 'Add photo'}</button>
+      <button type="button" class="pri" onclick="pkClose();openTaskEdit(${a})">Edit</button>
+    </div>${(toLog || rtOpenMode()==='hold') && !openTiles.has(tileKey(d, c.i)) ? `<div class="pk-a" style="margin-top:8px"><button type="button" onclick="pkClose();toggleTile('${d}','${c.i}')">${toLog ? 'Open task to use the timer' : 'Open full task'}</button></div>` : ''}`;
+}
+/* tick a step, checklist item or tick-box check inside the card */
+function pkStep(kind, id){
+  const c = pkCur; if(!c) return;
+  const it = findFocusItem(c.f, c.d, c.i); if(!it) return;
+  if(kind==='cl'){ toggleChecklistChild(c.f, c.d, c.i, id); return; }
+  if(kind==='st'){
+    const s = taskSteps(it)[id]; if(!s) return;
+    if(s.kind==='c') toggleSubChecklistItem(c.f, c.d, c.i, s.id);
+    else if(s.kind==='ms') toggleMergedStep(c.f, c.d, c.i, s.mi, s.list, s.id);
+    else toggleMergedChild(c.f, c.d, c.i, s.id);
+    return;
+  }
+  if(kind==='rq'){
+    const r = taskReqList(it.refId).find(x=>x.id===id); if(!r) return;
+    if(r.link==='snap'){ const g = state.data && state.data.gym; const on = !!(g && g.snapFitness && g.snapFitness[c.d]===true); setSnap(c.d, !on); return; }
+    setReq(c.f, c.d, c.i, id, !(it.req && it.req[id]));
+  }
+}
+function pkLog(key, val){ const c = pkCur; if(!c) return; setReqInput(c.f, c.d, c.i, key, val); }
+/* what still stops a task being ticked (checks the "tick everything" mode would fill in don't count) */
+function pkBlockedBy(it, d){
+  if(it.done) return null;
+  let blocked;
+  if(tickAllOn()){ const had = it.ciAuto; taAuto(it, d); blocked = reqBlocked(it, d); taUndo(it, d); if(had) it.ciAuto = had; }
+  else blocked = reqBlocked(it, d);
+  if(!blocked) return null;
+  const st = reqStatus(it, d);
+  return st ? st.rows.filter(r=>!r.ok && !r.optional).map(r=>r.label||r.short||'') : [];
+}
+/* tick the whole task from the card */
+function pkTick(){
+  const c = pkCur; if(!c) return;
+  const it = findFocusItem(c.f, c.d, c.i); if(!it) return;
+  if(it.type==='checklist'){
+    const on = !it.done;
+    (it.checklist||[]).forEach(x=>{ x.done = on; }); it.done = on; delete it.ciAuto;
+    saveState(); if(on) setTimeout(()=>celebrateTick(c.d), 30);
+    render(); return;
+  }
+  /* can't be ticked yet (Require each task's checks is on): say what's missing, right here */
+  const miss = pkBlockedBy(it, c.d);
+  if(miss){
+    c.msg = miss.length ? 'Finish these first: '+miss.join(', ') : 'Finish the task\'s checks first';
+    pkRefresh(true);
+    const card = document.querySelector('#pkBd .pk'); if(card){ card.classList.remove('pk-shake'); void card.offsetWidth; card.classList.add('pk-shake'); }
+    try{ if(navigator.vibrate) navigator.vibrate([10,40,10]); }catch(e){}
+    return;
+  }
+  c.msg = '';
+  /* a "tick it off anyway?" question has to sit above the card */
+  const b = document.getElementById('pkBd'); if(b) b.style.zIndex = '150';
+  toggleRoutineItem(c.f, c.d, c.i);
+  const sh = document.getElementById('sheetBackdrop');
+  if(sh && sh.classList.contains('open')){ pkClose(); return; }
+  if(b && !document.querySelector('.lifeos-alert-backdrop')) b.style.zIndex = '';
+}
+/* keep the card in step with the task after every change */
+function pkRefresh(force){
+  const b = document.getElementById('pkBd'), c = pkCur;
+  if(!b || !c || b.__pk!==c || b.classList.contains('closing')) return;
+  const it = findFocusItem(c.f, c.d, c.i); if(!it){ pkClose(); return; }
+  const card = b.querySelector('.pk'); if(!card) return;
+  const ae = document.activeElement;
+  if(!force && ae && card.contains(ae) && ae.matches('input,textarea')){ ae.addEventListener('blur', ()=>setTimeout(()=>pkRefresh(), 0), {once:true}); return; }
+  if(c.msg && !pkBlockedBy(it, c.d)) c.msg = '';
+  const top = card.scrollTop;
+  card.innerHTML = pkTaskHtml(it);
+  card.scrollTop = top;
+  if(!document.querySelector('.lifeos-alert-backdrop')) b.style.zIndex = '';
+  const tile = document.querySelector(`.rt[data-key="${CSS.escape(c.key)}"]`);
+  if(tile){ tile.classList.add('pk-src'); b.__src = tile; }
+  if(it.done && !c.done){
+    c.done = true;
+    card.classList.add('pk-ticked');
+    clearTimeout(c.t); c.t = setTimeout(()=>{ if(pkCur===c) pkClose(); }, 650);
+  } else if(!it.done){ c.done = false; clearTimeout(c.t); card.classList.remove('pk-ticked'); }
+}
+/* close: the card shrinks back into the task it came from */
+function pkClose(){
+  const b = document.getElementById('pkBd'); if(!b) return;
+  if(b.classList.contains('closing')) return;
+  const cur = b.__pk; if(cur && pkCur===cur){ clearTimeout(cur.t); pkCur = null; }
+  let src = null;
+  if(cur && cur.key) src = document.querySelector(`.rt[data-key="${CSS.escape(cur.key)}"]`);
+  if(!src && b.__src && document.contains(b.__src)) src = b.__src;
+  b.classList.add('closing'); b.id = '';
+  const card = b.querySelector('.pk');
+  let ms = 200;
+  if(src && card && (typeof fxOn!=='function' || fxOn())){
+    try{
+      const r = src.getBoundingClientRect(), f = card.getBoundingClientRect();
+      if(r.width > 20 && f.width > 20 && r.bottom > 0 && r.top < innerHeight){
+        b.classList.add('shrink');
+        card.style.animation = 'none';
+        card.style.transformOrigin = 'top left';
+        card.style.transition = 'transform .34s cubic-bezier(.4,0,.2,1), opacity .34s ease';
+        card.getBoundingClientRect();
+        card.style.transform = `translate(${r.left-f.left}px,${r.top-f.top}px) scale(${r.width/f.width},${Math.max(.08, r.height/f.height)})`;
+        card.style.opacity = '.25';
+        ms = 340;
+      }
+    }catch(e){}
+  }
+  const unhide = ()=>document.querySelectorAll('.pk-src').forEach(x=>x.classList.remove('pk-src'));
+  setTimeout(unhide, Math.max(0, ms-140));
+  setTimeout(()=>b.remove(), ms);
+}
+
+/* ---------- 3. A line on every setting saying what it does ---------- */
+const SET_WHAT = {
+  '+ Schedule a Switch': 'Change to a different routine profile on a date you pick',
+  '+ Add Task': 'Adds a task to this profile\'s routine',
+  'Rename / Duplicate / Delete Profile': 'Rename this routine profile, make a copy of it, or remove it',
+  '+ Add repeating task': 'A task that shows up in your routine on the days you choose',
+  'Quotes': 'The quotes shown on your Dashboard. Open to see or remove them',
+  '+ Add Quote': 'Add your own quote to the Dashboard',
+  '+ Add Category': 'Make a new category to sort your reminders into',
+  'Design & appearance': 'Choose the overall look and theme of the app',
+  'Super Simple mode': {t:'A clean, colourful, one-column look with less on screen', force:true},
+  'Colour': 'The background colour behind everything',
+  'Choose a photo': 'Use one of your photos as the background',
+  'Choose a different photo': 'Swap the photo used as your background',
+  'Darken background': 'Dims the background so text is easier to read',
+  'Card tint': 'How see-through the cards are',
+  'Blur': 'How much the background blurs behind the cards',
+  'Corner roundness': 'How rounded the corners of cards and buttons are',
+  'Reset corners': 'Puts corner roundness back to the design\'s default',
+  'Play it now': 'Replays the opening animation so you can preview it',
+  "Tomorrow's briefing": 'Write a note tonight that greets you on the Dashboard tomorrow morning',
+  "Today's briefing": 'The note sitting at the top of your Dashboard today',
+  'Choose which tasks show': 'Pick which routine tasks appear in your tick-offs',
+  'Current Streak': 'Days in a row you\'ve kept your discipline streak going. Hold to edit it',
+  'Sign in to sync devices': 'Sign in on each device so your phone and computer share the same data',
+  'Export Data': 'Downloads a backup file with all your LifeOS data',
+  'Import Data': 'Loads a backup file and replaces everything on this device with it',
+  'Backup Now': 'Saves a backup file of everything right now'
+};
+const SET_WHAT_CHIPS = {
+  'Default': 'What sits behind the app: the default, a gradient, one colour, or your own photo',
+  'Solid': 'How cards look over your background: solid, see-through, or frosted glass'
+};
+function setDescribe(root){
+  try{
+    if(!root) return;
+    root.querySelectorAll('.row').forEach(row=>{
+      if(row.closest('.set-jump') || row.querySelector('.row-what')) return;
+      const tEl = row.querySelector('.row-title');
+      if(!tEl){
+        const chip = row.querySelector('.chip-row .chip');
+        const w = chip && SET_WHAT_CHIPS[chip.textContent.trim()];
+        if(w && !row.previousElementSibling?.classList?.contains('row-what-chip')){
+          const d = document.createElement('div'); d.className = 'row-sub row-what row-what-chip'; d.textContent = w;
+          row.insertBefore(d, row.firstChild);
+        }
+        return;
+      }
+      const e = SET_WHAT[tEl.textContent.trim()]; if(!e) return;
+      const txt = typeof e==='string' ? e : e.t, force = typeof e==='object' && e.force;
+      const sub = row.querySelector('.row-sub');
+      const have = sub ? sub.textContent.trim() : '';
+      if(have && have.length >= 30 && !force) return;
+      if(have && have.toLowerCase().includes(txt.toLowerCase().slice(0,12))) return;
+      const d = document.createElement('div'); d.className = 'row-sub row-what'; d.textContent = txt;
+      if(tEl.classList.contains('row-text')){
+        /* "<div class=row-text row-title>": give it a proper text block */
+        const wrap = document.createElement('div'); wrap.className = 'row-text';
+        tEl.classList.remove('row-text'); tEl.parentNode.insertBefore(wrap, tEl); wrap.appendChild(tEl); wrap.appendChild(d);
+      } else (sub ? sub.parentNode : tEl.parentNode).appendChild(d);
+    });
+  }catch(err){ console.error('setDescribe', err); }
+}
+
+(function(){
+  const hook = ()=>{
+    if(typeof toggleRoutineItem==='function' && !toggleRoutineItem.__ta){
+      const o = toggleRoutineItem;
+      toggleRoutineItem = function(f, d, i){
+        const it = tickAllOn() ? findFocusItem(f, d, i) : null;
+        if(!it) return o.apply(this, arguments);
+        if(!it.done){
+          taAuto(it, d);
+          const r = o.apply(this, arguments);
+          if(!it.done){ taUndo(it, d); saveState(); }  /* waiting on a question or blocked: put the steps back */
+          return r;
+        }
+        const r = o.apply(this, arguments);
+        if(!it.done){ taUndo(it, d); saveState(); render(); }
+        return r;
+      };
+      toggleRoutineItem.__ta = true;
+    }
+    if(typeof render==='function' && !render.__pk){
+      const o = render;
+      render = function(){ const r = o.apply(this, arguments); try{ pkRefresh(); }catch(e){ console.error(e); } return r; };
+      render.__pk = true;
+    }
+    if(typeof renderSettings==='function' && !renderSettings.__what){
+      const o = renderSettings;
+      renderSettings = function(){ const r = o.apply(this, arguments); setDescribe(document.getElementById('settingsContent')); return r; };
+      renderSettings.__what = true;
+    }
+  };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', hook); else setTimeout(hook, 0);
+})();
+
 /* ============ INIT ============ */
 loadState().then(()=>{
   applyAppearance();
@@ -18446,6 +18751,35 @@ loadState().then(()=>{
 .tl-cp{display:flex;align-items:center;gap:8px;}
 .tl-cpb{border:0;border-radius:999px;padding:6px 12px;background:var(--fill);color:var(--text);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
 .tl-cpb.pri{background:var(--accent);color:var(--accent-ink);}
+/* 24 Nov: tick inside the held card */
+.pk-top{display:flex;align-items:flex-start;gap:12px;}
+.pk-tt{flex:1;min-width:0;}
+.pk-tick{flex:none;width:44px;height:44px;margin-top:2px;border-radius:50%;border:2px solid var(--text-3);background:transparent;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s,border-color .2s,transform .15s;}
+.pk-tick:active{transform:scale(.9);}
+.pk-tick.on{background:var(--green);border-color:var(--green);}
+.pk-tick svg{width:22px;height:22px;}
+.pk-l li.pk-tap{cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.pk-l li.pk-tap:active{opacity:.6;}
+.pk-l li.pk-tap .pk-c{width:22px;height:22px;font-size:13px;margin-top:0;}
+.pk-x{display:block;color:var(--text-3);font-size:12.5px;margin-top:2px;text-decoration:none;}
+.pk.pk-ticked{box-shadow:0 0 0 2px var(--green),0 0 30px 8px color-mix(in srgb,var(--green) 45%,transparent),0 26px 70px rgba(0,0,0,.45);transition:box-shadow .25s ease;}
+.pk-bd.closing.shrink{opacity:1;background:rgba(0,0,0,0);-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0);transition:background .34s ease,backdrop-filter .34s ease,-webkit-backdrop-filter .34s ease;}
+.pk-bd.closing.shrink .pk{transform:none;}
+
+.pk-tx{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1;}
+.pk-l li.on span.pk-tx{color:var(--text);text-decoration:none;}
+.pk-l li.on .pk-tx>span{color:var(--text-3);text-decoration:line-through;}
+.pk-x{margin-top:0;}
+.pk-in{font:inherit;font-size:16px;color:var(--text);background:var(--fill);border:1px solid var(--sep);border-radius:10px;padding:7px 10px;max-width:100%;box-sizing:border-box;}
+.pk-in-l{display:flex;align-items:center;gap:8px;color:var(--text-3);font-size:13px;}
+.pk-in-l .pk-in{width:110px;}
+.pk-ta{width:100%;resize:vertical;min-height:54px;}
+.pk-msg{margin:12px 0 2px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--red,#ff453a) 16%,transparent);color:var(--text);font-size:14px;line-height:1.35;}
+.pk.pk-shake{animation:pkShake .38s ease;}
+@keyframes pkShake{0%,100%{transform:none}20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(2px)}}
+/* settings: what each one does */
+.row-what-chip{width:100%;margin:0 0 8px;}
+.row-sub + .row-what{margin-top:3px;}
 </style>
 
 
