@@ -12,6 +12,11 @@
 //   rem       (off by default) reminders that have a time ping at that time
 // Custom notifications (state.notifs): normal, or SOS that repeats every N min
 // for H hours until marked done. A device in pushSubs with off:true gets nothing.
+// 25 Nov: every notification is editable by holding it in the app:
+//   built-ins -> pushCfg.over[key] = {title, text, go, apps}
+//   custom    -> n.go, n.apps on the notification itself
+// {auto} in a heading/message is swapped for what LifeOS would have said.
+// Apps ride along in go as "page~appId,appId"; the app shows buttons for them.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 
@@ -53,6 +58,25 @@ const addDays = (ds: string, n: number) => {
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 864e5);
 const clean = (t: unknown) => String(t || "").replace(/\p{Extended_Pictographic}|️|‍/gu, "").replace(/\s+/g, " ").trim();
 const kg = (n: number) => (Math.round(n * 100) / 100).toString();
+
+const KEY_OF: Record<string, string> = { m: "morning", g: "gym", t: "tick", e: "evening", f: "focus", u: "missed", r: "rem" };
+function withApps(go: string, apps: unknown) {
+  const a = Array.isArray(apps) ? apps.filter((x) => typeof x === "string" && x).slice(0, 6) : [];
+  return a.length ? `${go}~${a.join(",")}` : go;
+}
+function fill(tpl: unknown, auto: string) {
+  const t = String(tpl || "").trim();
+  if (!t) return auto;
+  return t.includes("{auto}") ? t.replace(/\{auto\}/g, auto) : t;
+}
+/* apply the user's edits for a built-in notification */
+function over(n: Note, cfg: Any): Note {
+  const key = KEY_OF[n.id.split(":")[0]];
+  const o = key && cfg?.over && typeof cfg.over === "object" ? cfg.over[key] : null;
+  if (!o || typeof o !== "object") return n;
+  const go = o.go && !/^sos:/.test(n.go) ? String(o.go) : n.go;
+  return { ...n, title: fill(o.title, n.title), body: fill(o.text, n.body), go: withApps(go, o.apps) };
+}
 
 async function config() {
   const { data, error } = await sb.from("lifeos_push_config").select("k,v");
@@ -262,8 +286,28 @@ Deno.serve(async (req) => {
       const subs = subRows[0]?.value?.v || {};
       if (!Object.values(subs).some((x: Any) => x && !x.off)) return json({ error: "No device has notifications on" }, 400);
       let n: Note = { id: "test", title: "LifeOS", body: "Test notification. You're all set ✓", go: "briefing" };
-      if (body.test === "morning") n = await morningNote(u.user.id, await loadDay(u.user.id, now.date), now);
-      if (body.test === "gym") n = (await gymNote(u.user.id, await loadDay(u.user.id, now.date), now)) || n;
+      const k = String(body.test);
+      if (k === "custom" && body.note && typeof body.note === "object") {
+        // a custom notification exactly as it's set up (sent now, from the app's draft)
+        const x = body.note;
+        n = { id: "n:x", title: String(x.title || (x.kind === "sos" ? "🚨 SOS" : "LifeOS")), body: String(x.text || "") + (x.kind === "sos" ? " Tap when it's done." : ""),
+          go: withApps(x.kind === "sos" && x.id ? "sos:" + x.id : String(x.go || "briefing"), x.apps) };
+        return json(await sendTwice(subs, { ...n, id: "n:test" }));
+      }
+      const cfgRows = await rows(u.user.id, (q) => q.eq("key", "pushCfg"));
+      const ucfg: Any = { ...(cfgRows[0]?.value?.v || {}) };
+      if (body.over && typeof body.over === "object") ucfg.over = body.over; // unsaved edits from the edit sheet
+      const ctx = k === "true" ? null : await loadDay(u.user.id, now.date);
+      if (ctx) {
+        if (k === "morning") n = await morningNote(u.user.id, ctx, now);
+        else if (k === "gym") n = (await gymNote(u.user.id, ctx, now)) || { id: "g:gym", title: "🏋️ Gym day", body: "No split set for today, so this is a sample.", go: "workout" };
+        else if (k === "tick") n = tickNote(ctx, now, "x") || { id: "t:x", title: "✅ Tick off LifeOS", body: "Nothing left to tick right now, so this is a sample.", go: "tickoff" };
+        else if (k === "evening") n = eveningNote(ctx) || { id: "e:evening", title: "🌙 Tick off + daily review", body: "All done today, so this is a sample.", go: "review" };
+        else if (k === "focus") n = focusNotes(ctx, now)[0] || { id: "f:x", title: "🎯 Life Focus ends tomorrow", body: "Sample: set up your next Life Focus so there's no gap.", go: "life" };
+        else if (k === "missed") n = { id: "u:x", title: "⏰ Not ticked yet", body: "Sample: a routine task was due 30 min ago. Done it? Tick it off.", go: "tickoff" };
+        else if (k === "rem") n = { id: "r:x", title: "🔔 Reminder", body: "Sample reminder", go: "reminders" };
+        n = over(n, ucfg);
+      }
       return json(await sendTwice(subs, { ...n, id: n.id + ":test" }));
     }
 
@@ -320,8 +364,8 @@ Deno.serve(async (req) => {
           if (start < 0 || now.mins < start || now.mins >= end) continue;
           const k = Math.floor((now.mins - start) / every);
           if (now.mins - (start + k * every) >= Math.min(every, WINDOW_MIN)) continue;
-          out.push({ id: `sos:${n.id}:${k}`, title, body: (text ? text + " " : "") + "Tap when it's done.", go: "sos:" + n.id });
-        } else if (due(n.time)) out.push({ id: "n:" + n.id, title, body: text, go: n.remId ? "reminders" : "briefing" });
+          out.push({ id: `sos:${n.id}:${k}`, title, body: (text ? text + " " : "") + "Tap when it's done.", go: withApps("sos:" + n.id, n.apps) });
+        } else if (due(n.time)) out.push({ id: "n:" + n.id, title, body: text, go: withApps(String(n.go || (n.remId ? "reminders" : "briefing")), n.apps) });
       }
 
       if (!ctx.dayOff) {
@@ -353,7 +397,8 @@ Deno.serve(async (req) => {
       if (on("focus") && due(c.focusTime || "16:00")) out.push(...focusNotes(ctx, now));
       if (c.rem) for (const x of ctx.rems) if (x.time && due(x.time)) out.push({ id: "r:" + x.id, title: "🔔 " + clean(x.title), body: clean(x.notes || "Reminder"), go: "reminders" });
 
-      for (const o of out) {
+      for (let o of out) {
+        o = over(o, c);
         const { error } = await sb.from("lifeos_push_sent").insert({ user_id: userId, notif_id: o.id, slot: now.date });
         if (error) continue; // already sent today
         sent += (await sendTwice(u.subs, o)).ok;

@@ -19603,4 +19603,280 @@ function apUseShortcut(){
 })();
 </script>
 
+<style id="lifeos-nov25-css">
+/* 25 Nov: hold any notification to edit it */
+.pn-ed{font-size:11px;font-weight:700;color:var(--accent);background:color-mix(in srgb,var(--accent) 15%,transparent);border-radius:999px;padding:2px 7px;margin-left:4px;vertical-align:middle;}
+.pn-x{display:block;margin-top:3px;color:var(--text-3);font-size:12.5px;}
+.pn-ed-sec{margin:16px 0 0;}
+.pn-ed-sec .chip-row{flex-wrap:wrap;gap:6px;}
+.pn-ed-hint{margin:8px 4px 0;color:var(--text-3);font-size:13px;line-height:1.35;}
+.pn-ed-btns{display:flex;flex-direction:column;gap:10px;margin-top:18px;}
+#pnAppsBar{position:fixed;left:12px;right:12px;bottom:calc(var(--safe-bottom, 0px) + 92px);z-index:400;max-width:520px;margin:0 auto;
+  padding:12px 12px 12px 16px;border-radius:22px;border:1px solid color-mix(in srgb,var(--text) 10%,transparent);
+  background:color-mix(in srgb,var(--card) 72%,transparent);backdrop-filter:blur(24px) saturate(170%);-webkit-backdrop-filter:blur(24px) saturate(170%);
+  box-shadow:0 12px 40px rgba(0,0,0,.22);animation:pnBarIn .38s cubic-bezier(.32,.72,0,1);}
+#pnAppsBar.out{animation:pnBarOut .25s ease forwards;}
+#pnAppsBar .pab-h{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:700;color:var(--text-3);letter-spacing:.03em;text-transform:uppercase;margin-bottom:10px;}
+#pnAppsBar .pab-x{border:0;background:var(--fill);color:var(--text-2);width:26px;height:26px;border-radius:50%;font-size:16px;line-height:1;cursor:pointer;}
+#pnAppsBar .rx-row{margin:0;}
+@keyframes pnBarIn{from{opacity:0;transform:translateY(24px) scale(.97);}to{opacity:1;transform:none;}}
+@keyframes pnBarOut{to{opacity:0;transform:translateY(16px) scale(.98);}}
+</style>
+<script id="lifeos-nov25">
+/* ============ 25 Nov: HOLD ANY NOTIFICATION TO EDIT IT ============
+   Hold a notification row in Settings › Briefing & alerts (built-in or custom)
+   to change its heading, message, where tapping it takes you, and which apps
+   come with it.
+     built-ins -> state.pushCfg.over[key] = {title, text, go, apps:[appId]}
+     custom    -> n.go, n.apps on the notification itself
+   Blank heading/message = the automatic one; {auto} keeps LifeOS's live text
+   inside your own words. The push function (lifeos-push) applies the edits and
+   sends go as "page~appId,appId"; opening it shows buttons for those apps. */
+const PN_KEYS = {
+  morning:{name:'☀️ Morning briefing', title:'☀️ Morning briefing', auto:'Your streak, today\'s workout with targets, and a quote', go:'briefing'},
+  gym:{name:'🏋️ Gym', title:'🏋️ (today\'s split) day', auto:'Gym days in a row, the weights to beat and a push line', go:'workout'},
+  tick:{name:'✅ Tick off tasks', title:'✅ Tick off LifeOS', auto:'How many things are left to tick, starting with the first few', go:'tickoff'},
+  evening:{name:'🌙 Daily review + tick off', title:'🌙 Tick off + daily review', auto:'What\'s still to tick, then a nudge to write your review', go:'tickoff', goAuto:'Tick off, or the daily review once everything\'s ticked'},
+  focus:{name:'🎯 Focus ending', title:'🎯 Life Focus ends tomorrow', auto:'Which Focus is ending and a nudge to set up the next one', go:'life', goAuto:'The Focus that\'s ending'},
+  missed:{name:'⏰ Missed routine task', title:'⏰ Not ticked yet', auto:'Which routine task is late', go:'tickoff'},
+  rem:{name:'🔔 Reminders with a time', title:'🔔 (the reminder\'s name)', auto:'The reminder\'s notes', go:'reminders'}
+};
+const PN_GO = [['briefing','🏠 Dashboard'],['tickoff','✅ Tick off'],['review','📝 Daily review'],['workout','🏋️ Workout'],['life','🎯 Life Focus'],['ecom','🛍️ Ecom Focus'],['reminders','🔔 Reminders'],['activities','🧩 Activities'],['timeline','📈 Timeline'],['app','📲 Straight to an app']];
+function pnGoName(g){ const x = PN_GO.find(p=>p[0]===g); return x ? x[1].replace(/^\S+\s/,'') : 'Dashboard'; }
+function pnOverAll(){ const c = state.pushCfg || {}; return c.over && typeof c.over==='object' ? c.over : {}; }
+function pnOver(key){ return pnOverAll()[key] || null; }
+function pnIsEdited(o){ return !!(o && (o.title || o.text || o.go || (o.apps||[]).length)); }
+function pnAppsOf(ids){ const L = apList(); return (Array.isArray(ids)?ids:[]).map(id=>L.find(a=>a.id===id)).filter(Boolean); }
+/* small grey line under a row: where it opens + its apps */
+function pnExtrasLine(go, apps, autoGo){
+  const A = pnAppsOf(apps);
+  if(!go && !A.length) return '';
+  const where = go==='app' ? (A[0] ? 'Opens '+escapeHtml(A[0].name) : 'Opens an app') : 'Opens '+escapeHtml(go ? pnGoName(go) : pnGoName(autoGo));
+  return `<span class="pn-x">${where}${A.length ? ' · '+A.map(a=>escapeHtml(a.emoji||'🔗')).join(' ') : ''}</span>`;
+}
+function pnHoldRow(key, title, sub, on, fn){
+  const o = pnOver(key), ed = pnIsEdited(o);
+  return `<div class="row" data-hold="pnEdOpen('${key}')" onclick="${fn}" style="cursor:pointer"><div class="row-text"><div class="row-title">${title}${ed?' <span class="pn-ed">Edited</span>':''}</div><div class="row-sub">${sub}${ed ? pnExtrasLine(o.go, o.apps, PN_KEYS[key].go) : ''}</div></div><button class="toggle ${on?'on':''}" type="button" aria-pressed="${!!on}" aria-label="${title}"><div class="knob"></div></button></div>`;
+}
+
+/* ---- the Settings rows, now holdable ---- */
+pnBuiltInHtml = function(){
+  const c = pnCfg();
+  const tog = (k, title, sub)=>pnHoldRow(k, title, sub, c[k], `pnSet('${k}',${!c[k]})`);
+  const time = (label, k, v)=>`<div class="row pn-sub"><div class="row-text"><div class="row-sub">${label}</div></div>${pnTimeIn(k, v)}</div>`;
+  return tog('morning', '☀️ Morning briefing', 'Your streak, today\'s workout with targets, and a quote')
+    + (c.morning ? time('Time', 'morningTime', c.morningTime) : '')
+    + tog('gym', '🏋️ Gym', '5 min before Gym: days in a row, your split and the weights to beat')
+    + tog('tick', '✅ Tick off tasks', 'Twice a day, only if you have things left to tick')
+    + (c.tick ? time('Morning', 'tick1', c.tick1) + time('Afternoon', 'tick2', c.tick2) : '')
+    + tog('evening', '🌙 Daily review + tick off', 'Tick off what\'s left, then rate your day')
+    + (c.evening ? time('Time', 'eveningTime', c.eveningTime) : '')
+    + tog('focus', '🎯 Focus ending', '4pm, 2 days and 1 day before a Life or Ecom Focus ends');
+};
+pnStylesHtml = function(){
+  const c = pnCfg();
+  return pnHoldRow('missed', '⏰ Missed routine task', c.missed ? 'On. A task still unticked '+c.missedAfter+' min after its time pings you once' : 'Off. Late tasks don\'t ping you', c.missed, `pnSet('missed',${!c.missed})`)
+    + (c.missed ? `<div class="row pn-sub"><div class="row-text"><div class="row-sub">Ping after</div></div><div class="pn-seg">${[15,30,60].map(m=>`<button type="button" class="chip ${c.missedAfter===m?'active':''}" onclick="pnSet('missedAfter',${m})">${m} min</button>`).join('')}</div></div>` : '')
+    + pnHoldRow('rem', '🔔 Reminders with a time', c.rem ? 'On. A reminder with a time pings you at that time' : 'Off. Reminders don\'t ping on their own', c.rem, `pnSet('rem',${!c.rem})`);
+};
+pnSettingsHtml = function(){
+  pnAutoOff();
+  const L = pnList(), nDev = Object.keys(pnSubs()).length, nSent = L.filter(pnIsSent).length;
+  return `<div class="section-label">Devices</div><div class="card">
+      ${pnDevicesHtml()}
+      ${nDev ? `<div class="row" style="cursor:pointer" onclick="pnTest('morning')"><div class="row-text"><div class="row-title">Send a test</div><div class="row-sub">Sends today's morning briefing to every device that's on</div></div><div class="chevron">›</div></div>` : ''}
+    </div>
+    <div class="section-label">Daily notifications</div><div class="card">${pnBuiltInHtml()}</div>
+    <p class="pn-ed-hint" style="margin:-4px 16px 14px">Hold any notification to change what it says, where it takes you and which apps come with it.</p>
+    <div class="section-label">Notification styles</div><div class="card">${pnStylesHtml()}</div>
+    <div class="section-label">Custom notifications</div><div class="card">
+      ${L.map(n=>{ const sent = pnIsSent(n); return `<div class="row pn-row ${sent?'pn-sent':''}" data-hold="pnOpen('${n.id}')"><div class="row-text" style="cursor:pointer" onclick="pnOpen('${n.id}')"><div class="row-title">${escapeHtml(n.title || n.text || '(no message)')}${sent?' <span class="pn-done">'+(n.kind==='sos'?'Done':'Sent')+'</span>':''}</div><div class="row-sub">${n.title && n.text ? escapeHtml(n.text)+'<br>' : ''}${escapeHtml(pnWhen(n))}${pnExtrasLine(n.kind==='sos' ? '' : n.go, n.apps, 'briefing')}</div></div>${sent ? '' : `<button type="button" class="toggle ${n.on!==false?'on':''}" aria-label="On or off" onclick="event.stopPropagation();pnFlip('${n.id}')"><div class="knob"></div></button>`}<button type="button" class="pn-del" aria-label="Delete notification" onclick="event.stopPropagation();pnDeleteQuick('${n.id}')">×</button></div>`; }).join('')}
+      ${nSent ? `<div class="row" style="cursor:pointer" onclick="pnClearSent()"><div class="row-text"><div class="row-title" style="color:var(--red)">Clear ${nSent} sent</div><div class="row-sub">Removes one-off notifications that have already gone out</div></div></div>` : ''}
+      <div class="row" style="cursor:pointer" onclick="pnOpen()"><div class="row-text"><div class="row-title" style="color:var(--accent)">+ Add notification</div><div class="row-sub">Your own heading and message, a time and days. Or an SOS that keeps going until it's done</div></div></div>
+    </div>`;
+};
+
+/* ---- shared pickers: where it opens + which apps ---- */
+function pnPickHtml(d, fnPrefix, opts){
+  const chip = (on, label, fn)=>`<button type="button" class="chip ${on?'active':''}" onclick="${fn}">${label}</button>`;
+  const L = apList(), apps = Array.isArray(d.apps) ? d.apps : [];
+  const goList = (opts.autoLabel ? [['', 'Automatic']] : []).concat(PN_GO);
+  const cur = d.go || (opts.autoLabel ? '' : 'briefing');
+  return `<div id="pnPick">
+    ${opts.sos ? `<div class="pn-ed-sec"><div class="section-label" style="padding-left:0">Opens</div><p class="pn-ed-hint" style="margin-top:0">An SOS always opens its Done screen, so you can stop it.</p></div>` : `
+    <div class="pn-ed-sec"><div class="section-label" style="padding-left:0">Tapping it opens</div>
+      <div class="chip-row">${goList.map(([g,l])=>chip(cur===g, l, `${fnPrefix}('go','${g}')`)).join('')}</div>
+      ${cur==='' && opts.autoLabel ? `<p class="pn-ed-hint">Automatic: ${escapeHtml(opts.autoLabel)}</p>` : ''}
+      ${cur==='app' ? `<p class="pn-ed-hint">${apps.length ? 'Opens '+escapeHtml((pnAppsOf(apps)[0]||{}).name||'the first app')+' straight away. If it can\'t, a button for it is waiting in LifeOS.' : 'Pick the app below.'}</p>` : ''}
+    </div>`}
+    <div class="pn-ed-sec"><div class="section-label" style="padding-left:0">Apps</div>
+      <div class="chip-row">${L.map(a=>chip(apps.includes(a.id), escapeHtml((a.emoji||'🔗')+' '+(a.name||'App')), `${fnPrefix}('app','${a.id}')`)).join('')}</div>
+      <p class="pn-ed-hint">When you open the notification, buttons for these sit at the bottom of LifeOS so they're one tap away. Add more apps in Activities › Apps.</p>
+    </div>
+  </div>`;
+}
+function pnPickApply(d, k, v){
+  if(k==='go') d.go = v;
+  if(k==='app'){ const s = Array.isArray(d.apps) ? d.apps.slice() : []; const i = s.indexOf(v); i>-1 ? s.splice(i,1) : s.push(v); d.apps = s; }
+}
+
+/* ---- edit a built-in notification ---- */
+let pnEd = null;
+function pnEdOpen(key){
+  const K = PN_KEYS[key]; if(!K) return;
+  const o = pnOver(key) || {};
+  pnEd = {key, title:o.title||'', text:o.text||'', go:o.go||'', apps:Array.isArray(o.apps)?o.apps.slice():[]};
+  pnEdSheet();
+}
+function pnEdKeep(){ const t = document.getElementById('pnEdTitle'), x = document.getElementById('pnEdText'); if(t) pnEd.title = t.value; if(x) pnEd.text = x.value; }
+function pnEdPick(k, v){ pnEdKeep(); pnPickApply(pnEd, k, v); const b = document.getElementById('pnPick'); if(b) b.outerHTML = pnPickHtml(pnEd, 'pnEdPick', {autoLabel: PN_KEYS[pnEd.key].goAuto || pnGoName(PN_KEYS[pnEd.key].go)}); }
+function pnEdSheet(){
+  const d = pnEd, K = PN_KEYS[d.key], ed = pnIsEdited(pnOver(d.key));
+  openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Cancel</button><h2>${escapeHtml(K.name.replace(/^\S+\s/,''))}</h2><button class="sheet-btn bold" onclick="pnEdSave()">Save</button></div>
+    <div class="sheet-body">
+      <div class="card">
+        <div class="row"><div class="row-text" style="width:100%"><div class="row-sub">Heading (top line)</div><input id="pnEdTitle" class="pn-in" placeholder="${escapeHtml(K.title)}" value="${escapeHtml(d.title)}" oninput="pnEd.title=this.value"></div></div>
+        <div class="row"><div class="row-text" style="width:100%"><div class="row-sub">Message (below it)</div><textarea id="pnEdText" class="pn-in pn-ta2" rows="3" placeholder="Automatic: ${escapeHtml(K.auto)}" oninput="pnEd.text=this.value">${escapeHtml(d.text)}</textarea></div></div>
+      </div>
+      <p class="pn-ed-hint">Leave either blank to keep the automatic one. Type <b>{auto}</b> to keep LifeOS's live details inside your own words, e.g. <i>Let's go. {auto}</i></p>
+      ${pnPickHtml(d, 'pnEdPick', {autoLabel: K.goAuto || pnGoName(K.go)})}
+      <div class="pn-ed-btns">
+        ${Object.keys(pnSubs()).length ? `<button type="button" class="btn-secondary" style="width:100%" onclick="pnEdTest()">Send a test with these changes</button>` : ''}
+        ${ed ? `<button type="button" class="btn-danger" style="width:100%" onclick="pnEdReset()">Reset to default</button>` : ''}
+      </div>
+    </div>`);
+}
+function pnEdClean(d){
+  const o = {};
+  if(String(d.title||'').trim()) o.title = d.title.trim();
+  if(String(d.text||'').trim()) o.text = d.text.trim();
+  if(d.go) o.go = d.go;
+  if((d.apps||[]).length) o.apps = d.apps.slice();
+  return o;
+}
+function pnEdSetOver(key, o){
+  const all = Object.assign({}, pnOverAll());
+  if(o && pnIsEdited(o)) all[key] = o; else delete all[key];
+  state.pushCfg = Object.assign({}, state.pushCfg||{}, {over: all});
+}
+function pnEdSave(){
+  pnEdKeep();
+  if(pnEd.go==='app' && !(pnEd.apps||[]).length){ toast('Pick the app it should open'); return; }
+  snap(); pnEdSetOver(pnEd.key, pnEdClean(pnEd));
+  saveState(); closeSheet(); render(); try{ LifeSync.syncNow && LifeSync.syncNow(); }catch(e){}
+  toast('Saved · '+PN_KEYS[pnEd.key].name.replace(/^\S+\s/,''));
+}
+function pnEdReset(){
+  snap(); pnEdSetOver(pnEd.key, null);
+  saveState(); closeSheet(); render(); undoToast('Back to the default');
+}
+async function pnSendTest(payload){
+  try{
+    const t = window.LifeSync && await LifeSync.token(); if(!t){ toast('Sign in to sync first'); return; }
+    try{ LifeSync.syncNow && LifeSync.syncNow(); }catch(e){}
+    toast('Sending…');
+    const r = await fetch(PN_FN, {method:'POST', headers:{'Content-Type':'application/json', Authorization:'Bearer '+t}, body: JSON.stringify(payload)});
+    const j = await r.json().catch(()=>({}));
+    toast(r.ok ? (j.ok ? 'Sent to '+j.ok+' device'+(j.ok===1?'':'s') : 'No device took it. Turn notifications off and on again') : (j.error || 'Test failed'));
+  }catch(e){ toast('Test failed: '+(e && e.message || e)); }
+}
+function pnEdTest(){
+  pnEdKeep();
+  const all = Object.assign({}, pnOverAll()); const o = pnEdClean(pnEd);
+  if(pnIsEdited(o)) all[pnEd.key] = o; else delete all[pnEd.key];
+  pnSendTest({test: pnEd.key, over: all});
+}
+
+/* ---- custom notifications: same pickers inside their sheet ---- */
+function pnCuPick(k, v){ pnKeep(); pnPickApply(pnDraft, k, v); const b = document.getElementById('pnPick'); if(b) b.outerHTML = pnPickHtml(pnDraft, 'pnCuPick', {sos: pnDraft.kind==='sos'}); }
+(function(){
+  const _sheet = pnSheet;
+  pnSheet = function(){
+    const r = _sheet.apply(this, arguments);
+    try{
+      const body = document.querySelector('#sheet .sheet-body'); if(!body || !pnDraft) return r;
+      const del = body.querySelector('.btn-danger');
+      const extra = pnPickHtml(pnDraft, 'pnCuPick', {sos: pnDraft.kind==='sos'})
+        + (Object.keys(pnSubs()).length ? `<button type="button" class="btn-secondary" style="width:100%;margin-top:18px" onclick="pnCuTest()">Send a test now</button>` : '');
+      if(del) del.insertAdjacentHTML('beforebegin', extra); else body.insertAdjacentHTML('beforeend', extra);
+    }catch(e){ console.error('pn pick', e); }
+    return r;
+  };
+  const _save = pnSave;
+  pnSave = function(){
+    try{
+      pnKeep();
+      if(pnDraft && pnDraft.kind!=='sos' && pnDraft.go==='app' && !(pnDraft.apps||[]).length){ toast('Pick the app it should open'); return; }
+      if(pnDraft && !(pnDraft.apps||[]).length) delete pnDraft.apps;
+      if(pnDraft && !pnDraft.go) delete pnDraft.go;
+      /* a routine-task notification: keep the heading if you changed it, and send the message back to the task */
+      if(pnDraft && pnDraft.id && String(pnDraft.id).indexOf('rt_')===0){
+        const old = pnList().find(x=>x.id===pnDraft.id);
+        if(old && (old.titleSet || old.title !== pnDraft.title)) pnDraft.titleSet = true;
+        const t = rxTmpl(pnDraft.rtId || String(pnDraft.id).slice(3));
+        if(t && t.notify) t.notify.text = String(pnDraft.text||'').trim();
+      }
+    }catch(e){ console.error(e); }
+    return _save.apply(this, arguments);
+  };
+  /* re-saving a routine task rebuilds its notification: keep what you set by holding it */
+  const _rs = rxSyncNotif;
+  rxSyncNotif = function(t){
+    const prev = t ? pnList().find(n=>n.id==='rt_'+t.id) : null;
+    const keep = prev ? {go:prev.go, apps:prev.apps, titleSet:prev.titleSet, title:prev.title, on:prev.on} : null;
+    const r = _rs.apply(this, arguments);
+    try{
+      const n = keep && pnList().find(x=>x.id==='rt_'+t.id);
+      if(n){
+        if(keep.go) n.go = keep.go;
+        if(keep.apps && keep.apps.length) n.apps = keep.apps;
+        if(keep.titleSet){ n.title = keep.title; n.titleSet = true; }
+        if(keep.on===false) n.on = false;
+      }
+    }catch(e){}
+    return r;
+  };
+})();
+function pnCuTest(){
+  pnKeep();
+  pnSendTest({test:'custom', note:{id:pnDraft.id, kind:pnDraft.kind, title:String(pnDraft.title||'').trim(), text:String(pnDraft.text||'').trim(), go:pnDraft.go||'', apps:pnDraft.apps||[]}});
+}
+
+/* ---- opening a notification: new places, straight-to-app, and the apps bar ---- */
+(function(){
+  const _go = pnGo;
+  pnGo = function(where){
+    let w = String(where||''), ids = [];
+    const i = w.indexOf('~');
+    if(i>-1){ ids = w.slice(i+1).split(',').filter(Boolean); w = w.slice(0, i); }
+    const A = (()=>{ try{ return pnAppsOf(ids); }catch(e){ return []; } })();
+    try{
+      if(w==='app'){ try{ closeSheet(); }catch(e){} navTo('dashboard'); }
+      else if(['activities','timeline','settings','goals'].includes(w)){ try{ closeSheet(); }catch(e){} navTo(w); }
+      else _go.call(this, w);
+    }catch(e){ console.error('pnGo', e); }
+    if(A.length){
+      if(w==='app') setTimeout(()=>{ try{ apGo(A[0].id); }catch(e){} }, 450);
+      setTimeout(()=>pnAppsBar(A), w==='app' ? 900 : 650);
+    }
+  };
+})();
+let pnBarT = 0;
+function pnAppsBar(A){
+  pnAppsBarClose(true);
+  const el = document.createElement('div');
+  el.id = 'pnAppsBar';
+  el.innerHTML = `<div class="pab-h"><span>From your notification</span><button type="button" class="pab-x" aria-label="Close" onclick="pnAppsBarClose()">×</button></div>
+    <div class="rx-row">${A.map(a=>`<button type="button" class="rx-btn pri" onclick="apGo('${a.id}');pnAppsBarClose()">${escapeHtml(a.emoji||'🔗')} ${escapeHtml(a.name||'App')}</button>`).join('')}</div>`;
+  document.body.appendChild(el);
+  clearTimeout(pnBarT); pnBarT = setTimeout(()=>pnAppsBarClose(), 30000);
+}
+function pnAppsBarClose(now){
+  const el = document.getElementById('pnAppsBar'); if(!el) return;
+  clearTimeout(pnBarT);
+  if(now){ el.remove(); return; }
+  el.classList.add('out'); setTimeout(()=>el.remove(), 260);
+}
+</script>
+
 </body></html>
