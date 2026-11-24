@@ -19527,4 +19527,71 @@ setTimeout(()=>{ try{ if(typeof state!=='undefined' && state) render(); }catch(e
 (function(){ const _s = apSave; apSave = function(){ const m = apDraft && apDraft.meals; const r = _s.apply(this, arguments); try{ if(apDraft){ const a = apList().find(x=>x.id===apDraft.id); if(a){ if(m) a.meals = true; else delete a.meals; saveState(); render(); } } }catch(e){} return r; }; })();
 </script>
 
+<style id="lifeos-apcat-css">
+.apc-s{position:sticky;top:0;z-index:1;background:var(--bg);padding:2px 0 10px;}
+.apc-list{border-radius:var(--radius,16px);background:var(--card);overflow:hidden;margin-bottom:16px;}
+.apc-r{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border:0;border-top:1px solid var(--sep);background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer;}
+.apc-r:first-child{border-top:0;}
+.apc-r:active{background:var(--fill);}
+.apc-r .e{width:34px;height:34px;border-radius:10px;background:var(--fill);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none;}
+.apc-r b{flex:1;font-size:15.5px;font-weight:600;}
+.apc-r small{color:var(--text-3);font-size:12.5px;}
+.apc-r.on small{color:var(--green);font-weight:700;}
+.apc-h{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin:6px 2px 6px;}
+</style>
+<script id="lifeos-apcat">
+/* 24 Nov: a scrollable, searchable list of common apps so adding one is one tap
+   (a website can't read which apps are installed on the phone). */
+const AP_CAT = [
+ ['Social',[['Instagram','📸','instagram://','https://www.instagram.com'],['TikTok','🎵','tiktok://','https://www.tiktok.com'],['Snapchat','👻','snapchat://','https://www.snapchat.com'],['YouTube','▶️','youtube://','https://www.youtube.com'],['Facebook','📘','fb://','https://www.facebook.com'],['Messenger','💬','fb-messenger://','https://www.messenger.com'],['WhatsApp','🟢','whatsapp://','https://web.whatsapp.com'],['Threads','🧵','barcelona://','https://www.threads.net'],['X (Twitter)','✖️','twitter://','https://x.com'],['Reddit','👽','reddit://','https://www.reddit.com'],['Pinterest','📌','pinterest://','https://www.pinterest.com'],['LinkedIn','💼','linkedin://','https://www.linkedin.com'],['Discord','🎮','discord://','https://discord.com/app'],['Telegram','✈️','tg://','https://web.telegram.org']]],
+ ['Health & fitness',[['Bevel','💚','bevel://','https://bevel.health'],['Halo','⭕','halo://',''],['Health','❤️','x-apple-health://',''],['Fitness','🏃','fitnessapp://',''],['Strava','🧡','strava://','https://www.strava.com'],['MyFitnessPal','🥗','mfp://','https://www.myfitnesspal.com'],['Hevy','🏋️','hevy://','https://hevy.com']]],
+ ['Work & business',[['Shopify','🛍️','shopify://','https://admin.shopify.com'],['Ads Manager','📣','','https://adsmanager.facebook.com'],['Meta Business Suite','📊','','https://business.facebook.com'],['Canva','🎨','canva://','https://www.canva.com'],['CapCut','✂️','capcut://','https://www.capcut.com'],['Notion','📓','notion://','https://www.notion.so'],['Slack','💬','slack://','https://app.slack.com'],['Gmail','✉️','googlegmail://','https://mail.google.com'],['Outlook','📨','ms-outlook://','https://outlook.live.com'],['Google Drive','🗂️','googledrive://','https://drive.google.com'],['Google Docs','📄','googledocs://','https://docs.google.com'],['Google Sheets','📗','googlesheets://','https://sheets.google.com'],['Google Calendar','🗓️','googlecalendar://','https://calendar.google.com'],['Teams','🟣','msteams://','https://teams.microsoft.com'],['Zoom','🎥','zoomus://','https://zoom.us']]],
+ ['AI',[['ChatGPT','💬','','https://chatgpt.com'],['Claude','✳️','','https://claude.ai'],['Gemini','✨','','https://gemini.google.com'],['Perplexity','🔎','','https://www.perplexity.ai']]],
+ ['iPhone apps',[['Calendar','📅','calshow://',''],['Notes','🗒️','mobilenotes://',''],['Reminders','☑️','x-apple-reminderkit://',''],['Messages','💭','sms:',''],['Mail','📧','message://',''],['FaceTime','📹','facetime://',''],['Photos','🖼️','photos-redirect://',''],['Clock / Alarms','⏰','clock-alarm://',''],['Maps','🗺️','maps://','https://maps.apple.com'],['Music','🎶','music://',''],['Podcasts','🎙️','podcasts://',''],['Files','📁','shareddocuments://',''],['Wallet','💳','shoebox://',''],['Find My','📍','findmy://',''],['App Store','🅰️','itms-apps://',''],['Shortcuts','⚡','shortcuts://','']]],
+ ['Music, video & other',[['Spotify','🎧','spotify:','https://open.spotify.com'],['Netflix','🍿','nflx://','https://www.netflix.com'],['Shazam','🔷','shazam://',''],['Duolingo','🦉','duolingo://','https://www.duolingo.com'],['Google Maps','🧭','comgooglemaps://','https://maps.google.com'],['Uber','🚗','uber://','https://m.uber.com'],['Uber Eats','🍔','ubereats://','https://www.ubereats.com'],['Chrome','🌐','googlechrome://',''],['Trade Me','🏷️','','https://www.trademe.co.nz']]]
+];
+let apcQ = '';
+function apcListHtml(){
+  const have = new Set(apList().map(a=>a.name)), q = apcQ.trim().toLowerCase();
+  return AP_CAT.map(([g, L])=>{
+    const rows = L.filter(x=>!q || x[0].toLowerCase().includes(q));
+    if(!rows.length) return '';
+    return `<div class="apc-h">${g}</div><div class="apc-list">${rows.map(([n,e])=>{ const on = have.has(n);
+      return `<button type="button" class="apc-r ${on?'on':''}" onclick="apcAdd('${n.replace(/'/g,'')}')"><span class="e">${e}</span><b>${escapeHtml(n)}</b><small>${on?'Added ✓':'Add'}</small></button>`; }).join('')}</div>`;
+  }).join('') || `<div class="hint">Not in the list. Add it yourself below.</div>`;
+}
+function apcSearch(v){ apcQ = v; const b = document.getElementById('apcBox'); if(b) b.innerHTML = apcListHtml(); }
+function apcAdd(name){
+  let x = null; AP_CAT.forEach(([g,L])=>L.forEach(r=>{ if(r[0].replace(/'/g,'')===name) x = r; }));
+  if(!x) return;
+  const L = apList(), have = L.find(a=>a.name===x[0]);
+  if(have){ toast(x[0]+' is already in Apps'); return; }
+  const a = {id:uid(), name:x[0], emoji:x[1], url:x[2], web:x[3]};
+  if(x[0]==='Bevel') a.meals = true;
+  L.push(a); saveState(); toast(x[0]+' added');
+  const b = document.getElementById('apcBox'); if(b) b.innerHTML = apcListHtml();
+  try{ renderActivities(); render(); }catch(e){}
+}
+/* "+ Add" now opens the list first; your own link is at the bottom */
+(function(){
+  const _er = apEditRender;
+  apEditRender = function(){
+    _er.apply(this, arguments);
+    try{
+      if(apDraft && apDraft.id) return;
+      const body = document.querySelector('#sheet .sheet-body'); if(!body) return;
+      body.querySelectorAll('.ap-pre').forEach(e=>e.remove());
+      const lab = [...body.querySelectorAll('.ap-f label')].find(l=>l.textContent==='QUICK ADD'); if(lab) lab.parentElement.remove();
+      const first = body.querySelector('.ap-f');
+      body.insertAdjacentHTML('afterbegin', `<div class="apc-s"><input class="ap-in" type="search" placeholder="Search apps" value="${escapeHtml(apcQ)}" oninput="apcSearch(this.value)" autocomplete="off"></div>
+        <div id="apcBox">${apcListHtml()}</div>
+        <div class="apc-h" style="margin-top:4px">Or add your own</div>`);
+      const h = document.querySelector('#sheet .sheet-header h2'); if(h) h.textContent = 'Add apps';
+      const back = document.querySelector('#sheet .sheet-header .sheet-btn'); if(back) back.textContent = 'Done';
+      void first;
+    }catch(e){ console.error('apcat', e); }
+  };
+})();
+</script>
+
 </body></html>
