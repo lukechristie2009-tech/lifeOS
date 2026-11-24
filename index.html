@@ -19984,6 +19984,36 @@ function pnAppsBarClose(now){
   if(now){ el.remove(); return; }
   el.classList.add('out'); setTimeout(()=>el.remove(), 260);
 }
+
+/* ---- 25 Nov: holding a task never leaves it opened ----
+   On a long hold, the click that iPhone sends when you let go could land after
+   the 0.65s guard and open the task's dropdown underneath the pop-up card, so
+   it was still open when you shut the card. Now the click after any hold is
+   swallowed however long you hold, and shutting the card closes the task if
+   it only got opened while the card was up. */
+(function(){
+  let downAt = 0;
+  document.addEventListener('pointerdown', ()=>{ downAt = Date.now(); }, {capture:true, passive:true});
+  const _pk = peekTask;
+  peekTask = function(f, d, i){
+    const was = (()=>{ try{ return openTiles.has(tileKey(d, i)); }catch(e){ return true; } })();
+    const r = _pk.apply(this, arguments);
+    try{ if(pkCur) pkCur.wasOpen = was; }catch(e){}
+    return r;
+  };
+  /* a hold ran during this press: swallow the click that comes when you let go */
+  ['pointerup','touchend'].forEach(ev=>document.addEventListener(ev, ()=>{
+    if((window.__holdAt||0) >= downAt && downAt) suppressClickUntil = Math.max(suppressClickUntil, Date.now() + 450);
+  }, {capture:true, passive:true}));
+  const _pc = pkClose;
+  pkClose = function(){
+    try{
+      const b = document.getElementById('pkBd'), cur = b && b.__pk;
+      if(cur && cur.wasOpen === false && openTiles.has(cur.key)) toggleTile(cur.d, cur.i, false);
+    }catch(e){}
+    return _pc.apply(this, arguments);
+  };
+})();
 </script>
 
 </body></html>
