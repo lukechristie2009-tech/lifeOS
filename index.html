@@ -18798,6 +18798,9 @@ async function pnTest(){
   }catch(e){ toast('Test failed: '+(e && e.message || e)); }
 }
 function uiAlertSafe(msg){ try{ if(typeof uiConfirm==='function'){ uiConfirm(msg, {title:'Notifications', ok:'OK'}); return; } }catch(e){} alert(msg); }
+function pnCfg(){ const c = state.pushCfg && typeof state.pushCfg==='object' ? state.pushCfg : {}; return {rem:!!c.rem, morning:c.morning!==false, morningTime:c.morningTime||'05:00', nudge:c.nudge!==false, nudgeAfter:Number(c.nudgeAfter)||30, listTime:c.listTime||'19:00', quiet:c.quiet||'21:30'}; }
+function pnSet(k, v){ state.pushCfg = Object.assign({}, state.pushCfg||{}, {[k]: v}); saveState(); render(); }
+function pnTimeIn(k, v){ return `<input type="time" class="pn-time" value="${escapeHtml(v)}" onclick="event.stopPropagation()" onchange="if(this.value)pnSet('${k}',this.value)">`; }
 function pnRemToggle(){ state.pushCfg = Object.assign({}, state.pushCfg||{}, {rem: !(state.pushCfg && state.pushCfg.rem)}); saveState(); render(); toast(state.pushCfg.rem ? 'Reminders with a time will ping you' : 'Reminders won\'t ping you'); }
 function pnWhen(n){
   const t = n.time ? fmtClockTime(n.time) : 'No time';
@@ -18813,6 +18816,13 @@ function pnSettingsHtml(){
   return `<div class="section-label">Phone notifications</div><div class="card">
       ${setToggleRow('Notifications on this device', here ? 'On. Your notifications pop up here even with LifeOS closed' : (pnIsIOS() && !pnStandalone() ? 'Off. Open LifeOS from your Home Screen to turn these on' : 'Off. Tap to allow notifications on this device'), here, here ? 'pnDisable()' : 'pnEnable()')}
       ${nDev ? `<div class="row" style="cursor:pointer" onclick="pnTest()"><div class="row-text"><div class="row-title">Send a test</div><div class="row-sub">Checks it works. Set up on ${nDev} device${nDev===1?'':'s'}</div></div><div class="chevron">›</div></div>` : ''}
+      ${(()=>{ const c = pnCfg(); return `
+      ${setToggleRow('Morning summary', c.morning ? 'On. Your tasks, first job, reminders and briefing in one notification' : 'Off. No morning notification', c.morning, `pnSet('morning',${!c.morning})`)}
+      ${c.morning ? `<div class="row"><div class="row-text"><div class="row-title">Morning summary time</div></div>${pnTimeIn('morningTime', c.morningTime)}</div>` : ''}
+      ${setToggleRow('Nudge when a task isn\'t ticked', c.nudge ? 'On. If a routine task is still unticked '+c.nudgeAfter+' min after its time, you get a nudge' : 'Off. No nudges for late tasks', c.nudge, `pnSet('nudge',${!c.nudge})`)}
+      ${c.nudge ? `<div class="row"><div class="row-text"><div class="row-title">Nudge after</div></div><div class="pn-seg">${[15,30,60].map(m=>`<button type="button" class="chip ${c.nudgeAfter===m?'active':''}" onclick="pnSet('nudgeAfter',${m})">${m} min</button>`).join('')}</div></div>
+      <div class="row"><div class="row-text"><div class="row-title">Today's List check</div><div class="row-sub">Tells you what's left on the list</div></div>${pnTimeIn('listTime', c.listTime)}</div>
+      <div class="row"><div class="row-text"><div class="row-title">Quiet from</div><div class="row-sub">No nudges after this time</div></div>${pnTimeIn('quiet', c.quiet)}</div>` : ''}`; })()}
       ${setToggleRow('Ping reminders that have a time', state.pushCfg && state.pushCfg.rem ? 'On. A reminder with a time pings you at that time' : 'Off. Only the notifications below go off', !!(state.pushCfg && state.pushCfg.rem), 'pnRemToggle()')}
     </div>
     <div class="section-label">Scheduled notifications</div><div class="card">
@@ -18985,6 +18995,7 @@ loadState().then(()=>{
 .pn-quick{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
 .pn-note{margin:14px 4px 0;color:var(--text-3);font-size:13.5px;}
 .pn-row .row-text{min-width:0;}
+.pn-seg{display:flex;gap:6px;}
 /* settings: what each one does */
 .row-what-chip{width:100%;margin:0 0 8px;}
 .row-sub + .row-what{margin-top:3px;}

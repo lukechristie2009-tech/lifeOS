@@ -4,7 +4,7 @@
 // Reads each user's synced LifeOS rows:
 //   notifs          -> [{id, text, time:'HH:MM', days:[0-6], date:'YYYY-MM-DD', on}]
 //   pushSubs        -> {deviceId: PushSubscription JSON}
-//   pushCfg         -> {rem:true}  (also ping reminders that have a time)
+//   pushCfg         -> {rem, morning, morningTime, nudge, nudgeAfter, listTime, quiet}
 //   reminders#<id>  -> {id, title, date, time, done}
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
@@ -124,13 +124,94 @@ Deno.serve(async (req) => {
         out.push({ id: "n:" + n.id, title: String(n.title || "LifeOS"), body: String(n.text || "") });
       }
 
-      if (u.cfg && u.cfg.rem) {
+      const cfg = (u.cfg || {}) as Record<string, unknown>;
+      const morningOn = cfg.morning !== false;
+      const nudgeOn = cfg.nudge !== false;
+      const morningAt = String(cfg.morningTime || "05:00");
+      const after = Math.max(5, Number(cfg.nudgeAfter) || 30);
+      const quiet = toMins(String(cfg.quiet || "21:30"));
+      const listAt = String(cfg.listTime || "19:00");
+
+      let todayRems: Record<string, unknown>[] = [];
+      if (cfg.rem || morningOn) {
         const { data: rem } = await sb.from("lifeos_rows").select("key,value").eq("user_id", userId)
           .eq("deleted", false).like("key", "reminders#%");
-        for (const r of rem || []) {
-          const x = r.value?.v;
-          if (!x || x.done || x.dismissed || x.date !== now.date || !x.time || !due(x.time)) continue;
+        todayRems = (rem || []).map((r) => r.value?.v).filter((x) => x && !x.done && !x.dismissed && x.date === now.date);
+      }
+      if (cfg.rem) {
+        for (const x of todayRems) {
+          if (!x.time || !due(String(x.time))) continue;
           out.push({ id: "r:" + x.id, title: "🔔 Reminder", body: String(x.title || "") });
+        }
+      }
+
+      // today's routine (Life + Ecommerce focus) and Today's List, only when needed
+      const needDay = (morningOn && due(morningAt)) || nudgeOn;
+      if (needDay) {
+        const { data: fr } = await sb.from("lifeos_rows").select("key,value").eq("user_id", userId).eq("deleted", false)
+          .or(`key.like.lifeFocuses#%,key.like.ecommerceFocuses#%,key.eq.todaysLists#${now.date},key.eq.briefings,key.eq.daysOff`);
+        let items: Record<string, unknown>[] = [];
+        let list: Record<string, unknown>[] = [];
+        let brief = "";
+        let dayOff = false;
+        for (const r of fr || []) {
+          const v = r.value?.v;
+          if (!v) continue;
+          if (r.key.startsWith("todaysLists#")) list = Array.isArray(v.items) ? v.items : [];
+          else if (r.key === "briefings") brief = String((v as Record<string, string>)[now.date] || "").trim();
+          else if (r.key === "daysOff") {
+            dayOff = (Array.isArray(v) ? v : []).some((d: Record<string, string>) =>
+              d && d.startDate && d.startDate <= now.date && (d.endDate || d.startDate) >= now.date);
+          } else if (Array.isArray(v.days)) {
+            const d = v.days.find((x: Record<string, unknown>) => x && x.date === now.date);
+            if (d && Array.isArray(d.items)) items = items.concat(d.items);
+          }
+        }
+        const seen = new Set<string>();
+        items = items.filter((it) => it && it.title && it.type !== "dropdown" && it.refId !== "sleep" && !seen.has(String(it.id)) && (seen.add(String(it.id)), true));
+        const clean = (t: unknown) => String(t || "").replace(/\p{Extended_Pictographic}|\uFE0F|\u200D/gu, "").replace(/\s+/g, " ").trim();
+        const fmt = (t: string) => {
+          const m = toMins(t); if (m < 0) return "";
+          const h = Math.floor(m / 60), mm = m % 60;
+          return `${h % 12 || 12}:${String(mm).padStart(2, "0")}${h < 12 ? "am" : "pm"}`;
+        };
+
+        if (morningOn && due(morningAt) && !dayOff) {
+          const timed = items.filter((it) => toMins(String(it.time || "")) >= 0)
+            .sort((a, b) => toMins(String(a.time)) - toMins(String(b.time)));
+          const first = timed.find((it) => !it.done);
+          const parts: string[] = [];
+          parts.push(`${items.length} task${items.length === 1 ? "" : "s"} today` + (first ? `, first up ${clean(first.title)} at ${fmt(String(first.time))}` : ""));
+          const listLeft = list.filter((x) => !x.done).length;
+          if (listLeft) parts.push(`${listLeft} on Today's List`);
+          if (todayRems.length) parts.push(`Reminders: ${todayRems.slice(0, 3).map((x) => clean(x.title)).join(", ")}${todayRems.length > 3 ? ` +${todayRems.length - 3}` : ""}`);
+          if (brief) parts.push(`📝 ${brief.split("\n")[0].slice(0, 90)}`);
+          out.push({ id: "m:morning", title: "☀️ Good morning", body: parts.join(". ") + "." });
+        }
+
+        if (nudgeOn && !dayOff) {
+          const late: string[] = [];
+          for (const it of items) {
+            if (it.done) continue;
+            const t = toMins(String(it.time || ""));
+            if (t < 0) continue;
+            const at = t + after;
+            if (quiet >= 0 && at >= quiet) continue;
+            if (at > now.mins || now.mins - at >= WINDOW_MIN) continue;
+            const { error } = await sb.from("lifeos_push_sent").insert({ user_id: userId, notif_id: "u:" + it.id, slot: now.date });
+            if (!error) late.push(clean(it.title));
+          }
+          if (late.length) {
+            out.push({
+              id: "u:batch:" + now.mins,
+              title: "⏰ Not ticked yet",
+              body: late.length === 1 ? `${late[0]} was due ${after} min ago. Done it? Tick it off.` : `${late.join(", ")} still need ticking.`,
+            });
+          }
+          if (due(listAt) && (quiet < 0 || toMins(listAt) < quiet)) {
+            const left = list.filter((x) => !x.done).map((x) => clean(x.title));
+            if (left.length) out.push({ id: "l:list", title: "📋 Today's List", body: `${left.length} left: ${left.slice(0, 4).join(", ")}${left.length > 4 ? "…" : ""}` });
+          }
         }
       }
 
