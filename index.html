@@ -18920,7 +18920,8 @@ function pnWhen(n){
   return t+' · '+when;
 }
 function pnSettingsHtml(){
-  const L = pnList(), nDev = Object.keys(pnSubs()).length;
+  pnAutoOff();
+  const L = pnList(), nDev = Object.keys(pnSubs()).length, nSent = L.filter(pnIsSent).length;
   return `<div class="section-label">Devices</div><div class="card">
       ${pnDevicesHtml()}
       ${nDev ? `<div class="row" style="cursor:pointer" onclick="pnTest('morning')"><div class="row-text"><div class="row-title">Send a test</div><div class="row-sub">Sends today's morning briefing to every device that's on</div></div><div class="chevron">›</div></div>` : ''}
@@ -18928,10 +18929,28 @@ function pnSettingsHtml(){
     <div class="section-label">Daily notifications</div><div class="card">${pnBuiltInHtml()}</div>
     <div class="section-label">Notification styles</div><div class="card">${pnStylesHtml()}</div>
     <div class="section-label">Custom notifications</div><div class="card">
-      ${L.map(n=>`<div class="row pn-row"><div class="row-text" style="cursor:pointer" onclick="pnOpen('${n.id}')"><div class="row-title">${escapeHtml(n.title || n.text || '(no message)')}</div><div class="row-sub">${n.title && n.text ? escapeHtml(n.text)+'<br>' : ''}${escapeHtml(pnWhen(n))}</div></div><button type="button" class="toggle ${n.on!==false?'on':''}" aria-label="On or off" onclick="event.stopPropagation();pnFlip('${n.id}')"><div class="knob"></div></button></div>`).join('')}
+      ${L.map(n=>{ const sent = pnIsSent(n); return `<div class="row pn-row ${sent?'pn-sent':''}"><div class="row-text" style="cursor:pointer" onclick="pnOpen('${n.id}')"><div class="row-title">${escapeHtml(n.title || n.text || '(no message)')}${sent?' <span class="pn-done">'+(n.kind==='sos'?'Done':'Sent')+'</span>':''}</div><div class="row-sub">${n.title && n.text ? escapeHtml(n.text)+'<br>' : ''}${escapeHtml(pnWhen(n))}</div></div>${sent ? '' : `<button type="button" class="toggle ${n.on!==false?'on':''}" aria-label="On or off" onclick="event.stopPropagation();pnFlip('${n.id}')"><div class="knob"></div></button>`}<button type="button" class="pn-del" aria-label="Delete notification" onclick="event.stopPropagation();pnDeleteQuick('${n.id}')">×</button></div>`; }).join('')}
+      ${nSent ? `<div class="row" style="cursor:pointer" onclick="pnClearSent()"><div class="row-text"><div class="row-title" style="color:var(--red)">Clear ${nSent} sent</div><div class="row-sub">Removes one-off notifications that have already gone out</div></div></div>` : ''}
       <div class="row" style="cursor:pointer" onclick="pnOpen()"><div class="row-text"><div class="row-title" style="color:var(--accent)">+ Add notification</div><div class="row-sub">Your own heading and message, a time and days. Or an SOS that keeps going until it's done</div></div></div>
     </div>`;
 }
+/* one-day notifications switch themselves off once they've gone out (SOS once marked done) */
+function pnNowHM(){ const d = new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function pnIsSent(n){
+  if(!n || !n.date) return false;
+  const t = todayISO();
+  if(n.kind==='sos') return n.date < t || n.doneOn===n.date;
+  return n.date < t || (n.date===t && (n.time||'00:00') <= pnNowHM());
+}
+function pnAutoOff(){
+  let ch = false;
+  pnList().forEach(n=>{ if(n.on!==false && pnIsSent(n)){ n.on = false; n.sent = true; ch = true; } });
+  if(ch) saveState();
+  return ch;
+}
+setInterval(()=>{ try{ if(typeof state!=='undefined' && state && pnAutoOff() && typeof currentPage!=='undefined' && currentPage==='settings') render(); }catch(e){} }, 60000);
+function pnDeleteQuick(id){ snap(); state.notifs = pnList().filter(x=>x.id!==id); saveState(); render(); undoToast('Notification deleted'); }
+function pnClearSent(){ const n = pnList().filter(x=>pnIsSent(x)).length; if(!n) return; snap(); state.notifs = pnList().filter(x=>!pnIsSent(x)); saveState(); render(); undoToast('Cleared '+n+' sent notification'+(n===1?'':'s')); }
 function pnFlip(id){ const n = pnList().find(x=>x.id===id); if(!n) return; n.on = n.on===false; saveState(); render(); }
 let pnDraft = null;
 function pnOpen(id, preset){
@@ -19134,6 +19153,10 @@ loadState().then(()=>{
 .pn-ta2{resize:none;min-height:44px;font-size:15px;}
 .pn-row .row-sub br+*{display:inline;}
 .pn-seg{display:flex;gap:6px;}
+.pn-del{flex:none;width:30px;height:30px;margin-left:10px;border-radius:50%;border:0;background:var(--fill);color:var(--text-2);font-size:19px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.pn-del:active{transform:scale(.9);}
+.pn-sent .row-title,.pn-sent .row-sub{opacity:.55;}
+.pn-done{font-size:11px;font-weight:700;color:var(--green);background:color-mix(in srgb,var(--green) 15%,transparent);border-radius:999px;padding:2px 7px;margin-left:4px;vertical-align:middle;}
 .pn-sub{padding-top:0 !important;}
 /* settings: what each one does */
 .row-what-chip{width:100%;margin:0 0 8px;}
