@@ -19636,6 +19636,8 @@ function apUseShortcut(){
 .pn-tokpick .pab-x{border:0;background:var(--card);color:var(--text-2);width:26px;height:26px;border-radius:50%;font-size:16px;cursor:pointer;}
 .pn-tokpick .chip-row{flex-wrap:wrap;gap:6px;}
 .chip.pn-tok-rm{color:var(--red);}
+.re-row.re-every{flex-direction:column;align-items:flex-start;gap:8px;}
+.re-row.re-every .chip-row{width:100%;}
 </style>
 <script id="lifeos-nov25">
 /* ============ 25 Nov: HOLD ANY NOTIFICATION TO EDIT IT ============
@@ -20014,6 +20016,73 @@ function pnAppsBarClose(now){
     return _pc.apply(this, arguments);
   };
 })();
+
+/* ---- 25 Nov: requirements that only come up every N days ----
+   A requirement can have every:N (2, 3, 7…) and from:'YYYY-MM-DD'. It only
+   counts (and only shows) on from, from+N, from+2N… On the other days the
+   task works as if it wasn't there. Set it in the requirement editor. */
+const REQ_EVERY = [[1,'Every day'],[2,'Every 2 days'],[3,'Every 3 days'],[7,'Once a week']];
+function reqDueOn(r, date){
+  const n = Math.floor(Number(r && r.every) || 1);
+  if(n <= 1 || !date) return true;
+  const from = r.from || date;
+  const d = daysBetween(from, date);
+  return ((d % n) + n) % n === 0;
+}
+function reqNextDue(r){
+  const t = todayISO();
+  for(let i=0;i<60;i++){ const d = addDaysISO(t, i); if(reqDueOn(r, d)) return d; }
+  return t;
+}
+reqStatus = function(it, date){
+  if(!it || it.type==='checklist') return null;
+  const list = taskReqList(it.refId).filter(r=>reqDueOn(r, date)); if(!list.length) return null;
+  const rows = list.map(r=>reqRowFor(r, it, date));
+  const need = rows.filter(r=>!r.optional);
+  const frac = need.length ? need.reduce((a,r)=>a+r.frac,0)/need.length : 1;
+  return {rows, met: need.every(r=>r.ok), done: need.filter(r=>r.ok).length, total: need.length, frac};
+};
+(function(){
+  const _ad = ciAutoTickReqs;
+  ciAutoTickReqs = function(it, date){
+    const L = taskReqList(it && it.refId), off = L.filter(r=>!reqDueOn(r, date));
+    if(!off.length) return _ad.apply(this, arguments);
+    off.forEach(r=>{ r.__opt = r.optional; r.optional = true; });   // skipped today: don't auto-tick it
+    try{ return _ad.apply(this, arguments); } finally { off.forEach(r=>{ r.optional = r.__opt; delete r.__opt; if(r.optional===undefined) delete r.optional; }); }
+  };
+  const _sd = reqShortDef;
+  reqShortDef = function(r){ const n = Math.floor(Number(r.every)||1); return _sd.apply(this, arguments) + (n>1 ? (n===7 ? ' (weekly)' : ' (every '+n+' days)') : ''); };
+  const _re = renderReqEditor;
+  renderReqEditor = function(){
+    const r0 = _re.apply(this, arguments);
+    try{
+      const cards = document.querySelectorAll('#sheet .re-card');
+      cards.forEach((card, i)=>{
+        const r = reqDraft.list[i]; if(!r) return;
+        const n = Math.floor(Number(r.every)||1);
+        const nx = n>1 ? reqNextDue(r) : null;
+        const when = nx ? (nx===todayISO() ? 'Due today' : nx===addDaysISO(todayISO(),1) ? 'Next due tomorrow' : 'Next due '+fmtDM(nx)) : '';
+        const html = `<div class="re-row re-every"><label>How often</label><div class="chip-row" style="flex-wrap:wrap;gap:6px">${REQ_EVERY.map(([v,l])=>`<button type="button" class="chip ${n===v?'active':''}" onclick="reqDraftEvery(${i},${v})">${l}</button>`).join('')}</div></div>
+          ${n>1 ? `<div class="re-note">${when}. Only shows on those days, every ${n===7?'week':n+' days'} from ${escapeHtml(fmtDM(r.from||todayISO()))}. <a href="#" style="color:var(--accent)" onclick="event.preventDefault();reqDraftEveryShift(${i})">Shift by a day</a></div>` : ''}`;
+        const opt = card.querySelector('.re-optional');
+        if(opt) opt.insertAdjacentHTML('beforebegin', html); else card.insertAdjacentHTML('beforeend', html);
+      });
+    }catch(e){ console.error('req every', e); }
+    return r0;
+  };
+})();
+function reqDraftEvery(i, n){
+  const r = reqDraft.list[i]; if(!r) return;
+  if(n<=1){ delete r.every; delete r.from; }
+  else { r.every = n; if(!r.from) r.from = todayISO(); }
+  renderReqEditor();
+}
+function reqDraftEveryShift(i){
+  const r = reqDraft.list[i]; if(!r || !r.every) return;
+  r.from = addDaysISO(r.from || todayISO(), 1);
+  if(daysBetween(todayISO(), r.from) >= r.every) r.from = addDaysISO(r.from, -r.every);
+  renderReqEditor();
+}
 </script>
 
 </body></html>
