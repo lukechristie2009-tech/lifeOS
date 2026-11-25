@@ -16997,12 +16997,23 @@ function wkTickSet(ei, si){
   renderWorkout();
 }
 function wkAddSet(ei){ const A = wkActive(), e = A && A.ex[ei]; if(!e) return; const l = e.sets[e.sets.length-1]; e.sets.push({kg: l && l.kg ? l.kg : '', r:'', done:false}); saveState(); renderWorkout(); }
+/* Deleting a set also updates the split, so the exercise starts with that many sets next time. */
+function wkRememberSets(A, e){
+  try{
+    if(!A || !e || e.kind==='cardio') return false;
+    const p = wkPlan(A.planId), pe = p && (p.ex||[]).find(x=>x.id===e.exId);
+    if(!pe) return false;
+    const n = Math.max(1, e.sets.length);
+    if(Number(pe.sets)===n) return false;
+    pe.sets = n; return true;
+  }catch(err){ return false; }
+}
 function wkSwipeDelete(ei, si){
   const A = wkActive(), e = A && A.ex[ei]; if(!e || !e.sets[si]){ renderWorkout(); return; }
   if(e.sets.length < 2){ toast('That\'s the last set. Use ⋯ to remove the exercise'); renderWorkout(); return; }
-  const removed = e.sets.splice(si, 1)[0], aid = A.id; saveState(); renderWorkout();
+  const removed = e.sets.splice(si, 1)[0], aid = A.id; const kept = wkRememberSets(A, e); saveState(); renderWorkout();
   try{ if(navigator.vibrate) navigator.vibrate(12); }catch(err){}
-  toast('Set '+(si+1)+' deleted', 'Undo', ()=>{ const B = wkActive(), f = B && B.id===aid && B.ex[ei]; if(!f) return; f.sets.splice(Math.min(si, f.sets.length), 0, removed); saveState(); renderWorkout(); });
+  toast('Set '+(si+1)+' deleted'+(kept ? ' · '+e.sets.length+' set'+(e.sets.length===1?'':'s')+' from now on' : ''), 'Undo', ()=>{ const B = wkActive(), f = B && B.id===aid && B.ex[ei]; if(!f) return; f.sets.splice(Math.min(si, f.sets.length), 0, removed); if(kept) wkRememberSets(B, f); saveState(); renderWorkout(); });
 }
 /* Swipe a set row left to delete it (vertical scrolling still works normally).
    Uses touch events (same as the rest of LifeOS's swipes) so it works on iPhone even when
@@ -17056,7 +17067,7 @@ function wkSwipeDelete(ei, si){
   /* a swipe that ends on the tick button must not also tick the set */
   document.addEventListener('click', e=>{ if(Date.now()-swipedAt < 450 && e.target.closest && e.target.closest('.wk-swipe')){ e.stopPropagation(); e.preventDefault(); } }, true);
 })();
-function wkRemoveSet(ei){ const A = wkActive(), e = A && A.ex[ei]; if(!e || e.sets.length<2) return; const i = e.sets.map(x=>x.done).lastIndexOf(false); e.sets.splice(i>=0 ? i : e.sets.length-1, 1); saveState(); renderWorkout(); }
+function wkRemoveSet(ei){ const A = wkActive(), e = A && A.ex[ei]; if(!e || e.sets.length<2) return; const i = e.sets.map(x=>x.done).lastIndexOf(false); e.sets.splice(i>=0 ? i : e.sets.length-1, 1); if(wkRememberSets(A, e)) toast(e.sets.length+' set'+(e.sets.length===1?'':'s')+' from now on'); saveState(); renderWorkout(); }
 function wkExMenu(ei){
   const A = wkActive(), e = A && A.ex[ei]; if(!e) return;
   openSheet(`<div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>${escapeHtml(e.name)}</h2><span style="width:50px"></span></div>

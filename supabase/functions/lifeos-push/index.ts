@@ -197,8 +197,13 @@ function targetsFor(ctx: Any, plan: Any, today: string, max = 4) {
 /* gym days in a row, counting back from yesterday (today counts once it's logged) */
 function gymStreak(ctx: Any, today: string) {
   const days = new Set((ctx.logs || []).map((l: Any) => l.date));
+  const set = ctx.workout?.streakSet; // a count set by hand in the app ("187 up to this date")
   let d = days.has(today) ? today : addDays(today, -1), n = 0;
-  while (days.has(d) && n < 1000) { n++; d = addDays(d, -1); }
+  for (let g = 0; g < 1000; g++) {
+    if (set && d === set.date) return n + (Number(set.n) || 0);
+    if (!days.has(d)) break;
+    n++; d = addDays(d, -1);
+  }
   return n;
 }
 
