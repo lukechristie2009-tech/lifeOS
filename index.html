@@ -14202,6 +14202,20 @@ function ciAutoTickReqs(it, date){
       } else if(!(it.req && it.req[r.id])){ it.req = Object.assign({}, it.req||{}); it.req[r.id] = true; a.req.push(r.id); }
     } else if(r.type==='steps' && !taskSteps(it).length && !(it.req && it.req[r.id])){
       it.req = Object.assign({}, it.req||{}); it.req[r.id] = true; a.req.push(r.id);
+    } else if((r.type==='number' || r.type==='time') && r.target!=null && r.target!==''){
+      /* set it to the requirement itself, e.g. 1000 kcal or 06:30 */
+      if(reqRowFor(r, it, date).ok) return;
+      const had = it.req && Object.prototype.hasOwnProperty.call(it.req, r.id);
+      a.vals = a.vals || []; a.vals.push([r.id, had ? it.req[r.id] : null, had]);
+      it.req = Object.assign({}, it.req||{}); it.req[r.id] = r.type==='number' ? Number(r.target) : String(r.target);
+    } else if(r.type==='timer'){
+      const goal = Number(r.target)||0, got = loggedMinutesFor(date, it.id);
+      if(goal > got){
+        if(!Array.isArray(state.timerLogs)) state.timerLogs = [];
+        const id = 'ta'+Math.random().toString(36).slice(2,8), f = (function(){ const all = [].concat(state.lifeFocuses||[], state.ecommerceFocuses||[]); const hit = all.find(x=>(x.days||[]).some(d=>d.date===date && (d.items||[]).some(i=>i===it || i.id===it.id))); return hit ? hit.id : null; })();
+        state.timerLogs.push({at:Date.now(), id, pct:100, date, note:'Filled by tick-off', title:it.title||'', itemId:it.id, focusId:f, minutes:goal-got, planned:goal, subject:null, itemDate:date});
+        a.timers = a.timers || []; a.timers.push(id);
+      }
     }
   });
   (it.subChecklist||[]).forEach(c=>{ if(c && !c.done){ c.done = true; a.steps.push(c.id); } });
@@ -14209,7 +14223,7 @@ function ciAutoTickReqs(it, date){
     const sn = (m && m.snapshot) || {};
     ['subChecklist','checklist'].forEach(L=>{ (Array.isArray(sn[L])?sn[L]:[]).forEach(c=>{ if(c && !c.done){ c.done = true; a.ms.push([i,L,c.id]); } }); });
   });
-  if(a.req.length || a.steps.length || a.ms.length || a.snap) it.ciAuto = a; else delete it.ciAuto;
+  if(a.req.length || a.steps.length || a.ms.length || a.snap || (a.vals&&a.vals.length) || (a.timers&&a.timers.length)) it.ciAuto = a; else delete it.ciAuto;
 }
 function ciUndoAutoReqs(it, date){
   const a = it && it.ciAuto; if(!a) return;
@@ -14217,6 +14231,8 @@ function ciUndoAutoReqs(it, date){
   (it.subChecklist||[]).forEach(c=>{ if(c && a.steps.indexOf(c.id)>-1) c.done = false; });
   (a.ms||[]).forEach(([i,L,id])=>{ const sn = it.merged && it.merged[i] && it.merged[i].snapshot; const c = sn && Array.isArray(sn[L]) && sn[L].find(x=>x.id===id); if(c) c.done = false; });
   if(a.snap && state.data && state.data.gym && state.data.gym.snapFitness) delete state.data.gym.snapFitness[date];
+  (a.vals||[]).forEach(([k,prev,had])=>{ if(!it.req) return; if(had) it.req[k] = prev; else delete it.req[k]; });
+  if(a.timers && Array.isArray(state.timerLogs)) state.timerLogs = state.timerLogs.filter(l=>a.timers.indexOf(l.id)<0);
   delete it.ciAuto;
 }
 function ciTickReminder(i){
@@ -14672,7 +14688,7 @@ function ciSettingsHtml(){
       ${tg('b','list',"Today's List",'What\'s still left on Today\'s List by '+tb)}
     </div>
     <div class="section-label">Inside both tick-offs</div><div class="card">
-      ${setToggleRow('Tick-off ticks steps too', ciTickReqsOn() ? 'On. In a tick-off, ticking a task ticks its steps and tick boxes as well' : 'Off. In a tick-off, only the task itself gets ticked', ciTickReqsOn(), 'ciToggleTickReqs()')}
+      ${setToggleRow('Tick-off ticks steps too', ciTickReqsOn() ? 'On. In a tick-off, ticking a task ticks its steps and tick boxes, and sets times, calories and timers to their target' : 'Off. In a tick-off, only the task itself gets ticked', ciTickReqsOn(), 'ciToggleTickReqs()')}
       ${setToggleRow('Tick-off shows task details', ciInsideOn() ? 'On. Each task in a tick-off lists its note and steps under it' : 'Off. Tick-offs list task names only', ciInsideOn(), 'ciToggleInside()')}
       ${setToggleRow('Log calories and times in tick-off', ciLogOn() ? 'On. Meals get a calories box, wake-up and bed get a time box' : 'Off. Log calories and times inside each task instead', ciLogOn(), 'ciToggleLog()')}
       <div class="row" style="cursor:pointer" onclick="openCiSkipSheet()"><div class="row-text"><div class="row-title">Tasks left out of tick-offs</div><div class="row-sub">${nSkip ? nSkip+' task'+(nSkip===1?'':'s')+' left out' : 'Every routine task shows'}</div></div><div class="chevron">›</div></div>
@@ -18499,7 +18515,7 @@ function tickAllSettingHtml(){
     ${setToggleRow('Ticking a task ticks its steps', tickAllOn()
       ? 'On. Anywhere you tick a task, its steps and tick boxes tick too. Untick to undo'
       : 'Off. Ticking a task leaves its steps as they are', tickAllOn(), 'tickAllToggle()')}
-    <div class="row"><div class="row-sub">Times, numbers and timers still need logging.</div></div>
+    <div class="row"><div class="row-sub">Times, calories and timers get set to their target. Written logs still need writing.</div></div>
   </div>`;
 }
 
