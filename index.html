@@ -310,6 +310,7 @@ input,textarea,select{font-family:inherit;}
   animation:slideUp .32s cubic-bezier(.32,.72,0,1);
 }
 @keyframes slideUp{from{transform:translateY(100%);}to{transform:none;}}
+.sheet-grab{width:38px;height:5px;border-radius:3px;background:rgba(128,128,128,.4);margin:8px auto -2px;}
 .sheet-header{
   display:grid;grid-template-columns:minmax(64px,auto) 1fr minmax(64px,auto);align-items:center;gap:8px;
   padding:10px 12px;position:sticky;top:0;z-index:2;
@@ -4580,17 +4581,56 @@ function savingsDelSaved(id){ const g = savingsActive(); if(!g) return; snap(); 
 
 /* ============ SHEET HELPERS ============ */
 let sheetRefreshFn = null; // optional re-render callback for whatever sheet is currently open
+let sheetSwipeSave = null; // when set, swiping the sheet down (or tapping outside it) runs this instead of just closing
 function openSheet(html){
-  document.getElementById('sheet').innerHTML = html;
+  sheetSwipeSave = null;
+  const sh = document.getElementById('sheet');
+  sh.style.transform = ''; sh.style.transition = '';
+  sh.innerHTML = html;
   document.getElementById('sheetBackdrop').classList.add('open');
 }
 function closeSheet(){
   document.getElementById('sheetBackdrop').classList.remove('open');
   sheetRefreshFn = null;
+  sheetSwipeSave = null;
 }
 document.getElementById('sheetBackdrop').addEventListener('click', e=>{
-  if(e.target.id==='sheetBackdrop') closeSheet();
+  if(e.target.id!=='sheetBackdrop') return;
+  if(sheetSwipeSave){ const fn = sheetSwipeSave; sheetSwipeSave = null; fn(); } else closeSheet();
 });
+/* Swipe down from the top of a save-on-swipe sheet (e.g. editing a reminder) to save and close it. */
+(function(){
+  const sh = document.getElementById('sheet'); let sd = null;
+  const reset = ()=>{ sh.style.transition = 'transform .22s cubic-bezier(.32,.72,0,1)'; sh.style.transform = ''; setTimeout(()=>{ sh.style.transition = ''; }, 240); };
+  sh.addEventListener('touchstart', e=>{
+    sd = null;
+    if(!sheetSwipeSave || e.touches.length!==1 || sh.scrollTop > 0) return;
+    const ta = e.target.closest && e.target.closest('textarea'); if(ta && ta.scrollTop > 0) return;
+    sd = {x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now(), dy:0, on:false};
+  }, {passive:true});
+  sh.addEventListener('touchmove', e=>{
+    if(!sd) return;
+    const dx = e.touches[0].clientX - sd.x, dy = e.touches[0].clientY - sd.y;
+    if(!sd.on){
+      if(dy > 10 && dy > Math.abs(dx)*1.2 && sh.scrollTop <= 0){ sd.on = true; sh.style.transition = 'none'; try{ if(document.activeElement && sh.contains(document.activeElement)) document.activeElement.blur(); }catch(_){} }
+      else if(dy < -6 || Math.abs(dx) > 12){ sd = null; return; }
+      else return;
+    }
+    e.preventDefault();
+    sd.dy = Math.max(0, dy - 10);
+    sh.style.transform = 'translateY('+sd.dy+'px)';
+  }, {passive:false});
+  const end = ()=>{
+    if(!sd || !sd.on){ sd = null; return; }
+    const dy = sd.dy, v = dy / Math.max(1, Date.now()-sd.t); sd = null;
+    if(dy > 110 || (dy > 45 && v > 0.5)){
+      const fn = sheetSwipeSave; sheetSwipeSave = null;
+      sh.style.transition = 'transform .18s ease-out'; sh.style.transform = 'translateY(100%)';
+      setTimeout(()=>{ try{ if(fn) fn(); else closeSheet(); } finally { setTimeout(()=>{ sh.style.transition = ''; sh.style.transform = ''; }, 30); } }, 170);
+    } else reset();
+  };
+  sh.addEventListener('touchend', end); sh.addEventListener('touchcancel', ()=>{ if(sd && sd.on) reset(); sd = null; });
+})();
 
 /* ============ RENDER: DASHBOARD ============ */
 function computeWeekProgress(){
@@ -9166,7 +9206,7 @@ function openReminderDetail(id){
   const r=state.reminders.find(x=>x.id===id);
   if(r && r.kind==='general'){
     openSheet(`
-      <div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>Edit General Reminder</h2><button class="sheet-btn bold" style="color:var(--red)" onclick="deleteReminder('${id}')">Delete</button></div>
+      <div class="sheet-grab" aria-hidden="true"></div><div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Cancel</button><h2>Edit General Reminder</h2><button class="sheet-btn bold" style="color:var(--red)" onclick="deleteReminder('${id}')">Delete</button></div>
       <div class="sheet-body">
         <div class="field"><label>Title</label><input type="text" id="rTitle2" value="${escapeHtml(r.title)}"></div>
         <div class="field"><label>Notes</label><textarea id="rNotes2">${escapeHtml(r.notes||'')}</textarea></div>
@@ -9174,10 +9214,11 @@ function openReminderDetail(id){
         <div class="btn-stack"><button class="btn-primary" onclick="saveGeneralEdit('${id}')">Save</button>
         <button class="btn-secondary" onclick="closeSheet();toggleReminder('${id}')">${r.done?'Mark not done':'✓ Complete'}</button>${r.done?'':remListBtnHtml(id)}</div>
       </div>`);
+    sheetSwipeSave = ()=>saveGeneralEdit(id);
     return;
   }
   openSheet(`
-    <div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Close</button><h2>Edit Reminder</h2><button class="sheet-btn bold" style="color:var(--red)" onclick="deleteReminder('${id}')">Delete</button></div>
+    <div class="sheet-grab" aria-hidden="true"></div><div class="sheet-header"><button class="sheet-btn" onclick="closeSheet()">Cancel</button><h2>Edit Reminder</h2><button class="sheet-btn bold" style="color:var(--red)" onclick="deleteReminder('${id}')">Delete</button></div>
     <div class="sheet-body">
       <div class="field"><label>Title</label><input type="text" id="rTitle2" value="${escapeHtml(r.title)}"></div>
       ${(!r.done && r.date && r.date<todayISO()) ? `<div class="field"><label style="color:var(--red)">Overdue. Reschedule</label>${rescheduleChipsHtml(id)}</div>` : ''}
@@ -9198,6 +9239,7 @@ function openReminderDetail(id){
       </div>
     </div>
   `);
+  sheetSwipeSave = ()=>saveReminderEdit(id);
 }
 function saveGeneralEdit(id){
   const r=state.reminders.find(x=>x.id===id); if(!r) return;
@@ -9207,8 +9249,8 @@ function saveGeneralEdit(id){
   saveState(); closeSheet(); renderGoals(); render(); toast('Saved');
 }
 function saveReminderEdit(id){
-  const r=state.reminders.find(x=>x.id===id);
-  r.title=document.getElementById('rTitle2').value.trim();
+  const r=state.reminders.find(x=>x.id===id); if(!r){ closeSheet(); return; }
+  const t2=document.getElementById('rTitle2').value.trim(); if(t2) r.title=t2;
   const ty2 = (document.getElementById('rType2')||{}).value||'';
   if(ty2==='general'){ r.kind='general'; delete r.type; } else { delete r.kind; if(ty2) r.type=ty2; else delete r.type; }
   r.date=document.getElementById('rDate2').value;
