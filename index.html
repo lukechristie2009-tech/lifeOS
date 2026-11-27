@@ -4605,6 +4605,7 @@ document.getElementById('sheetBackdrop').addEventListener('click', e=>{
   sh.addEventListener('touchstart', e=>{
     sd = null;
     if(!sheetSwipeSave || e.touches.length!==1 || sh.scrollTop > 0) return;
+    if(e.target.closest && e.target.closest('.sheet-header,.sheet-grab')) return; // the header drag handler below covers the top bar
     const ta = e.target.closest && e.target.closest('textarea'); if(ta && ta.scrollTop > 0) return;
     sd = {x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now(), dy:0, on:false};
   }, {passive:true});
@@ -4614,9 +4615,9 @@ document.getElementById('sheetBackdrop').addEventListener('click', e=>{
     if(!sd.on){
       if(dy > 10 && dy > Math.abs(dx)*1.2 && sh.scrollTop <= 0){ sd.on = true; sh.style.transition = 'none'; try{ if(document.activeElement && sh.contains(document.activeElement)) document.activeElement.blur(); }catch(_){} }
       else if(dy < -6 || Math.abs(dx) > 12){ sd = null; return; }
-      else return;
+      else { if(dy > 0 && sh.scrollTop <= 0 && e.cancelable) e.preventDefault(); return; } // stop iOS starting its own scroll before we take over
     }
-    e.preventDefault();
+    if(e.cancelable) e.preventDefault();
     sd.dy = Math.max(0, dy - 10);
     sh.style.transform = 'translateY('+sd.dy+'px)';
   }, {passive:false});
@@ -12300,7 +12301,7 @@ function maybeShowHoldTip(){
   let st = null;
   const sheet = ()=>document.getElementById('sheet');
   document.addEventListener('touchstart', e=>{
-    const h = e.target.closest('#sheet .sheet-header');
+    const h = e.target.closest('#sheet .sheet-header, #sheet .sheet-grab');
     if(!h || e.target.closest('button,input')) return;
     st = {y:e.touches[0].clientY, dy:0};
     sheet().style.transition = 'none';
@@ -12314,7 +12315,7 @@ function maybeShowHoldTip(){
     if(!st) return;
     const s = sheet(); const close = st.dy > 110; st = null;
     s.style.transition = 'transform .25s cubic-bezier(.32,.72,0,1)';
-    if(close){ s.style.transform = 'translateY(100%)'; setTimeout(()=>{ closeSheet(); s.style.transform=''; s.style.transition=''; }, 230); }
+    if(close){ const fn = sheetSwipeSave; sheetSwipeSave = null; s.style.transform = 'translateY(100%)'; setTimeout(()=>{ try{ if(fn) fn(); else closeSheet(); } finally { s.style.transform=''; s.style.transition=''; } }, 230); }
     else { s.style.transform = ''; setTimeout(()=>{ s.style.transition=''; }, 260); }
   });
 })();
