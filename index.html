@@ -4582,8 +4582,10 @@ function savingsDelSaved(id){ const g = savingsActive(); if(!g) return; snap(); 
 /* ============ SHEET HELPERS ============ */
 let sheetRefreshFn = null; // optional re-render callback for whatever sheet is currently open
 let sheetSwipeSave = null; // when set, swiping the sheet down (or tapping outside it) runs this instead of just closing
+let sheetDirty = false;     // true once something in the open sheet has been typed, picked or tapped
 function openSheet(html){
   sheetSwipeSave = null;
+  if(!document.getElementById('sheetBackdrop').classList.contains('open')) sheetDirty = false; // re-renders of the same sheet keep their edits
   const sh = document.getElementById('sheet');
   sh.style.transform = ''; sh.style.transition = '';
   sh.innerHTML = html;
@@ -4593,18 +4595,47 @@ function closeSheet(){
   document.getElementById('sheetBackdrop').classList.remove('open');
   sheetRefreshFn = null;
   sheetSwipeSave = null;
+  sheetDirty = false;
 }
+/* GENERAL SAVE RULE: swiping a sheet down or tapping outside it saves your changes.
+   If you changed something and the sheet has a plain Save / Done / Add / Create / Update
+   button, that button is pressed for you. Nothing changed -> it just closes.
+   Delete, sign-in, import and other big actions are never pressed automatically.
+   Cancel / Close still closes without saving. */
+const SHEET_AUTOSAVE_RX = /^(save|save [a-z' ]{1,20}|done|add|create|update|finish planning)$/i;
+function sheetAutoSaveBtn(){
+  const sh = document.getElementById('sheet');
+  const c = Array.from(sh.querySelectorAll('.sheet-header .sheet-btn.bold, .btn-primary'));
+  return c.find(b=>!b.disabled && b.offsetParent!==null && SHEET_AUTOSAVE_RX.test((b.textContent||'').trim()) && !/red/.test(b.getAttribute('style')||''));
+}
+function sheetDismiss(){
+  const bd = document.getElementById('sheetBackdrop'), sh = document.getElementById('sheet');
+  if(sheetSwipeSave){ const fn = sheetSwipeSave; sheetSwipeSave = null; fn(); return; }
+  const b = sheetDirty ? sheetAutoSaveBtn() : null;
+  if(!b){ closeSheet(); return; }
+  const before = sh.innerHTML;
+  try{ b.click(); }catch(e){ console.error(e); }
+  // still open with nothing changed = its save refused (e.g. missing a title): keep it open so nothing is lost
+  if(bd.classList.contains('open') && sh.innerHTML !== before) closeSheet();
+}
+(function(){
+  const sh = document.getElementById('sheet');
+  const mark = e=>{ if(e.target.closest && e.target.closest('.sheet-header')) return; sheetDirty = true; };
+  sh.addEventListener('input', mark, true); sh.addEventListener('change', mark, true);
+  sh.addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('button'); if(b && SHEET_AUTOSAVE_RX.test((b.textContent||'').trim())) return; mark(e); }, true);
+})();
 document.getElementById('sheetBackdrop').addEventListener('click', e=>{
   if(e.target.id!=='sheetBackdrop') return;
-  if(sheetSwipeSave){ const fn = sheetSwipeSave; sheetSwipeSave = null; fn(); } else closeSheet();
+  sheetDismiss();
 });
-/* Swipe down from the top of a save-on-swipe sheet (e.g. editing a reminder) to save and close it. */
+/* Swipe down on any sheet (when it's scrolled to the top) to save and close it. */
 (function(){
   const sh = document.getElementById('sheet'); let sd = null;
   const reset = ()=>{ sh.style.transition = 'transform .22s cubic-bezier(.32,.72,0,1)'; sh.style.transform = ''; setTimeout(()=>{ sh.style.transition = ''; }, 240); };
   sh.addEventListener('touchstart', e=>{
     sd = null;
-    if(!sheetSwipeSave || e.touches.length!==1 || sh.scrollTop > 0) return;
+    if(e.touches.length!==1 || sh.scrollTop > 0) return;
+    if(e.target.closest && e.target.closest('input[type=range],[data-drag],[data-swipe],.wk-row,.wk-swipe,canvas,.hm,#hmScroll,.scroll-chips,.chip-row,select')) return;
     if(e.target.closest && e.target.closest('.sheet-header,.sheet-grab')) return; // the header drag handler below covers the top bar
     const ta = e.target.closest && e.target.closest('textarea'); if(ta && ta.scrollTop > 0) return;
     sd = {x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now(), dy:0, on:false};
@@ -4625,9 +4656,8 @@ document.getElementById('sheetBackdrop').addEventListener('click', e=>{
     if(!sd || !sd.on){ sd = null; return; }
     const dy = sd.dy, v = dy / Math.max(1, Date.now()-sd.t); sd = null;
     if(dy > 110 || (dy > 45 && v > 0.5)){
-      const fn = sheetSwipeSave; sheetSwipeSave = null;
       sh.style.transition = 'transform .18s ease-out'; sh.style.transform = 'translateY(100%)';
-      setTimeout(()=>{ try{ if(fn) fn(); else closeSheet(); } finally { setTimeout(()=>{ sh.style.transition = ''; sh.style.transform = ''; }, 30); } }, 170);
+      setTimeout(()=>{ try{ sheetDismiss(); } finally { if(document.getElementById('sheetBackdrop').classList.contains('open')) reset(); else setTimeout(()=>{ sh.style.transition = ''; sh.style.transform = ''; }, 30); } }, 170);
     } else reset();
   };
   sh.addEventListener('touchend', end); sh.addEventListener('touchcancel', ()=>{ if(sd && sd.on) reset(); sd = null; });
@@ -12315,7 +12345,7 @@ function maybeShowHoldTip(){
     if(!st) return;
     const s = sheet(); const close = st.dy > 110; st = null;
     s.style.transition = 'transform .25s cubic-bezier(.32,.72,0,1)';
-    if(close){ const fn = sheetSwipeSave; sheetSwipeSave = null; s.style.transform = 'translateY(100%)'; setTimeout(()=>{ try{ if(fn) fn(); else closeSheet(); } finally { s.style.transform=''; s.style.transition=''; } }, 230); }
+    if(close){ s.style.transform = 'translateY(100%)'; setTimeout(()=>{ try{ sheetDismiss(); } finally { if(document.getElementById('sheetBackdrop').classList.contains('open')){ s.style.transform=''; setTimeout(()=>{ s.style.transition=''; }, 260); } else { s.style.transform=''; s.style.transition=''; } } }, 230); }
     else { s.style.transform = ''; setTimeout(()=>{ s.style.transition=''; }, 260); }
   });
 })();
