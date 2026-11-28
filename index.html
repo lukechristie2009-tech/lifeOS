@@ -16947,10 +16947,15 @@ function wkWeekDays(){ const t = todayISO(), dow = (wkDow(t)+6)%7; return Array.
    The others wait in W.splits. W.splitSwitches = [{id, date, splitId}] switch automatically
    on that date, the same way changing schedules swaps the routine over. ---- */
 const WK_CINDY_MOVES = [{n:'Pull-ups', r:5}, {n:'Push-ups', r:10}, {n:'Squats', r:15}];
+const WK_TOT_EXTRA = [
+  {id:'e_lunges_1', name:'Lunges', kind:'reps', sets:3, lo:12, hi:20, rest:60, inc:null, note:'Reps per leg. Go slow and deep; hold something heavy once 20 gets easy.'},
+  {id:'e_crunches_2', name:'Crunches', kind:'reps', sets:3, lo:15, hi:25, rest:45, inc:null, note:''}
+];
 function wkCindySplit(){
   const plan = {id:'p_cindy', name:'Cindy', ex:[
     {id:'e_cindy_0', name:'Cindy', kind:'amrap', sets:1, lo:20, hi:20, rest:0, inc:null, moves: WK_CINDY_MOVES.map(m=>Object.assign({}, m)),
       note:'As many rounds as you can in 20 min. Pull-ups on the branch: test it can hold you first. If pull-ups slow you right down, do jumping or slow-lowering ones and keep moving.'},
+    ...WK_TOT_EXTRA.map(e=>Object.assign({}, e)),
     {id:'e_plank_1', name:'Plank', kind:'time', sets:3, lo:45, hi:60, rest:60, inc:null, note:'Core finisher'}
   ]};
   const week = {}; for(let d=0; d<7; d++) week[d] = plan.id;
@@ -16965,6 +16970,18 @@ function wkSplitsInit(W){
     W.seedCindy = true;
     if(W.splitId!=='s_totaranui' && !W.splits.some(x=>x.id==='s_totaranui')) W.splits.push(wkCindySplit());
     if(todayISO() < '2026-12-14' && !W.splitSwitches.some(x=>x.id==='sw_totaranui')) W.splitSwitches.push({id:'sw_totaranui', date:'2026-12-14', splitId:'s_totaranui'});
+    W._needSync = true;
+  }
+  if(!W.seedCindyB){
+    /* 28 Nov: lunges then crunches straight after Cindy on every Totaranui day */
+    W.seedCindyB = true;
+    const sp = W.splitId==='s_totaranui' ? {plans:W.plans} : W.splits.find(x=>x.id==='s_totaranui');
+    const pl = sp && (sp.plans||[]).find(x=>x.id==='p_cindy');
+    if(pl){
+      const add = WK_TOT_EXTRA.filter(e=>!pl.ex.some(x=>wkKey(x.name)===wkKey(e.name))).map(e=>Object.assign({}, e));
+      const at = pl.ex.findIndex(x=>x.kind==='amrap');
+      pl.ex.splice(at>=0 ? at+1 : 0, 0, ...add);
+    }
     W._needSync = true;
   }
   const t = todayISO(), due = W.splitSwitches.filter(x=>x.date<=t).sort((a,b)=>a.date<b.date?-1:1);
